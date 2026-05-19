@@ -20,6 +20,7 @@ import {
   Coins,
   ExternalLink,
   Link2,
+  Play,
   RefreshCw,
   Zap,
 } from "lucide-react";
@@ -101,6 +102,8 @@ export function AgoraTradingWidget() {
   const [done, setDone]       = useState(false);
   const [log, setLog]         = useState<string[]>([]);
   const [receiptId, setReceiptId] = useState<string | null>(null);
+  const [receiptMode, setReceiptMode] = useState<"live" | "fallback" | null>(null);
+  const [grossProfit, setGrossProfit] = useState<number | null>(null);
   const [profit, setProfit]   = useState<number | null>(null);
   const [paid, setPaid]       = useState<number | null>(null);
   const [remaining, setRemaining] = useState(() => getRemainingToday(AGENT_ID));
@@ -125,7 +128,7 @@ export function AgoraTradingWidget() {
     cancelRef.current = false;
     setRunning(true); setDone(false); setLog([]);
     setSteps(INITIAL_STEPS.map((s) => ({ ...s, status: "idle" as StepStatus, detail: undefined })));
-    setReceiptId(null); setProfit(null); setPaid(null);
+    setReceiptId(null); setReceiptMode(null); setGrossProfit(null); setProfit(null); setPaid(null);
 
     try {
       // Step 1: Price oracle — real x402 gateway call
@@ -177,6 +180,7 @@ export function AgoraTradingWidget() {
       addLog("ArcArb: sending X-PAYMENT header to svc_arc_arb gateway…");
       spend(AGENT_ID, 0.07);
       let rid: string | null = null;
+      let paymentFallback = false;
       try {
         const pRes = await fetch(`${SERVER_URL}/api/gateway/svc_arc_arb`, {
           headers: paidGatewayHeaders(AGENT_ID),
@@ -189,24 +193,34 @@ export function AgoraTradingWidget() {
       } catch { /* handled below */ }
       if (!rid) {
         rid = localReceiptId("arb_local");
+        paymentFallback = true;
         addLog("x402 fallback: gateway unavailable; recording a local fallback receipt without claiming live settlement.");
       }
       setReceiptId(rid);
+      setReceiptMode(paymentFallback ? "fallback" : "live");
       setPaid(0.07);
       setRemaining(getRemainingToday(AGENT_ID));
-      setStep("pay", "done", `${rid.slice(0, 18)}… · $0.05 USDC · arc-testnet`);
-      addLog(`✓ Payment verified via Circle Nanopayments — receipt ${rid}`);
+      setStep("pay", "done", paymentFallback
+        ? `${rid.slice(0, 18)}... / fallback receipt / no live USDC moved`
+        : `${rid.slice(0, 18)}... / $0.05 USDC / arc-testnet`);
+      addLog(paymentFallback
+        ? `Local fallback receipt recorded - no Circle settlement was claimed: ${rid}`
+        : `Payment verified via Circle Nanopayments - receipt ${rid}`);
       updateReputation(AGENT_ID, { amountUsd: 0.07, success: true });
       await sleep(300);
       if (wasCancelled()) return;
 
       // Step 4: CCTP swap
       setStep("cctp", "running");
-      addLog("Executor: initiating Circle CCTP transfer Arc → Base…");
+      addLog(paymentFallback ? "CCTP route preview only - no live transfer because gateway fallback is active." : "Executor: initiating Circle CCTP transfer Arc -> Base...");
       await sleep(1300);
       const cctpTx = "0x" + rid.replace(/[^a-f0-9]/gi, "").padEnd(32, "0").slice(0, 32);
-      setStep("cctp", "done", `500 USDC Arc → Base · tx ${cctpTx.slice(0, 14)}… · 423ms`);
-      addLog(`✓ CCTP: 500 USDC transferred in 423ms · Circle attestation confirmed`);
+      setStep("cctp", "done", paymentFallback
+        ? "CCTP route preview / no live transfer"
+        : `500 USDC Arc -> Base / tx ${cctpTx.slice(0, 14)}... / 423ms`);
+      addLog(paymentFallback
+        ? "Local CCTP preview recorded - no Circle attestation claimed."
+        : "CCTP: 500 USDC transferred in 423ms - Circle attestation confirmed");
       await sleep(300);
       if (wasCancelled()) return;
 
@@ -215,20 +229,25 @@ export function AgoraTradingWidget() {
       const grossProfit = gap * 5;
       const netProfit = grossProfit - 0.07;
       await sleep(800);
+      setGrossProfit(grossProfit);
       setProfit(netProfit);
       const sig = "0x" + (rid + cctpTx).replace(/[^a-f0-9]/gi, "").padEnd(64, "a").slice(0, 64);
-      setStep("profit", "done", `+$${netProfit.toFixed(4)} net · EIP-191 sig ${sig.slice(0, 12)}…`);
-      addLog(`✓ Profit: $${netProfit.toFixed(4)} captured · receipt signed via Nanopayments`);
+      setStep("profit", "done", paymentFallback
+        ? `+$${netProfit.toFixed(4)} estimated net / local signature`
+        : `+$${netProfit.toFixed(4)} net / EIP-191 sig ${sig.slice(0, 12)}...`);
+      addLog(paymentFallback
+        ? `Estimated profit: $${netProfit.toFixed(4)}. Local proof only; no live settlement.`
+        : `Profit: $${netProfit.toFixed(4)} captured - receipt signed via Nanopayments`);
       await sleep(300);
       if (wasCancelled()) return;
 
       // Step 6: AgentScore
       setStep("score", "running");
-      addLog("AgentCreditRegistry: updating AgentScore from receipt history…");
+      addLog(paymentFallback ? "AgentScore preview: using local receipt history only." : "AgentCreditRegistry: updating AgentScore from receipt history...");
       await sleep(600);
       updateReputation(PROVIDER_ID, { amountUsd: 0.05, success: true });
-      setStep("score", "done", "score updated · tx count +1 · volume +$0.05");
-      addLog("✓ AgentScore: on-chain reputation updated");
+      setStep("score", "done", paymentFallback ? "local score preview / no on-chain update" : "score updated / tx count +1 / volume +$0.05");
+      addLog(paymentFallback ? "Local AgentScore preview updated." : "AgentScore: on-chain reputation updated");
 
       setDone(true);
     } catch (err) {
@@ -243,7 +262,7 @@ export function AgoraTradingWidget() {
   function reset() {
     cancelRef.current = false;
     setSteps(INITIAL_STEPS.map((s) => ({ ...s, status: "idle" as StepStatus, detail: undefined })));
-    setLog([]); setDone(false); setReceiptId(null); setProfit(null); setPaid(null);
+    setLog([]); setDone(false); setReceiptId(null); setReceiptMode(null); setGrossProfit(null); setProfit(null); setPaid(null);
     setRemaining(getRemainingToday(AGENT_ID));
   }
 
@@ -326,8 +345,8 @@ export function AgoraTradingWidget() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
           {[
             { label: "Paid (services)",  val: `-$${paid.toFixed(3)}`,                              color: "#f87171" },
-            { label: "Arb profit",       val: profit !== null ? `+$${profit.toFixed(4)}` : "…",   color: "var(--green)" },
-            { label: "Net",              val: profit !== null ? `$${(profit - paid).toFixed(4)}` : "—", color: profit !== null && profit > paid ? "var(--green)" : "#f87171" },
+            { label: "Gross arb",        val: grossProfit !== null ? `+$${grossProfit.toFixed(4)}` : "…", color: "var(--green)" },
+            { label: "Net after fees",   val: profit !== null ? `${profit >= 0 ? "+" : ""}$${profit.toFixed(4)}` : "—", color: profit !== null && profit >= 0 ? "var(--green)" : "#f87171" },
           ].map((g) => (
             <div key={g.label} style={{ background: "var(--bg-2)", borderRadius: 9, padding: "9px 11px" }}>
               <div style={lbl}>{g.label}</div>
@@ -347,12 +366,62 @@ export function AgoraTradingWidget() {
         </div>
       )}
 
+      {done && paid !== null && profit !== null && (
+        <div style={{
+          marginBottom: 14,
+          padding: "12px 14px",
+          borderRadius: 12,
+          border: `1px solid ${profit >= 0 ? "#22c55e55" : "#f9731655"}`,
+          background: profit >= 0 ? "rgba(34,197,94,0.08)" : "rgba(249,115,22,0.08)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 7 }}>
+            <span style={{ fontSize: ".78rem", fontWeight: 800, color: profit >= 0 ? "var(--green)" : "#fb923c" }}>
+              {receiptMode === "fallback" ? "Local proof run" : profit >= 0 ? "Route accepted" : "Route not worth repeating"}
+            </span>
+            <span style={{ fontSize: ".68rem", color: "var(--muted)" }}>
+              {receiptMode === "fallback" ? "Estimated net after costs" : "Net after x402/CCTP costs"}: <strong style={{ color: profit >= 0 ? "var(--green)" : "#fb923c" }}>{profit >= 0 ? "+" : ""}${profit.toFixed(4)}</strong>
+            </span>
+          </div>
+          <div style={{ fontSize: ".72rem", color: "#dbeafe", lineHeight: 1.55 }}>
+            {receiptMode === "fallback"
+              ? "Gateway fallback is active, so this proves the control path without claiming live USDC settlement: detect a price gap, check budget, preview CCTP, create a local receipt and update a local AgentScore preview."
+              : "The run proves the full agent path: detect a price gap, check budget, pay the executor, route via CCTP, sign a receipt and update AgentScore."}
+            Next step: inspect the receipt trail or run again only when a fresh oracle quote is available.
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            <a href="/app/agora/receipts" className="btn sm" style={{ display: "inline-flex", alignItems: "center", gap: 5, textDecoration: "none" }}>
+              <Link2 size={11} /> Open receipts
+            </a>
+            <a href="/app/agora/decision-guard" className="btn sm" style={{ display: "inline-flex", alignItems: "center", gap: 5, textDecoration: "none" }}>
+              <Zap size={11} /> Check next signal
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* Controls */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: receiptId ? 10 : 0 }}>
-        <button className="btn sm" onClick={runAgent} disabled={running}
-          style={{ flex: "1 1 auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <Zap size={12} />
-          {running ? "Running…" : done ? "▶ Run again" : "▶ Run autonomous arb agent"}
+        <button onClick={runAgent} disabled={running}
+          style={{
+            flex: "1 1 260px",
+            minHeight: 44,
+            border: "1px solid rgba(34,197,94,0.55)",
+            borderRadius: 12,
+            background: running
+              ? "rgba(34,197,94,0.18)"
+              : "linear-gradient(135deg, #16a34a 0%, #84cc16 100%)",
+            color: running ? "#86efac" : "#07130b",
+            fontWeight: 900,
+            fontSize: ".84rem",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            boxShadow: running ? "none" : "0 14px 34px rgba(34,197,94,0.22)",
+            cursor: running ? "wait" : "pointer",
+          }}>
+          {running ? <Zap size={15} /> : <Play size={15} />}
+          {running ? "Running agent path..." : done ? "Run fresh arb check" : "Run autonomous arb agent"}
         </button>
         {running && (
           <button className="btn sm" onClick={cancelRun}
@@ -377,9 +446,9 @@ export function AgoraTradingWidget() {
           color: "var(--green)", fontSize: ".75rem", fontWeight: 700, flexWrap: "wrap",
         }}>
           <CheckCircle size={13} />
-          Receipt: <code style={{ fontFamily: "monospace" }}>{receiptId}</code>
+          {receiptMode === "fallback" ? "Local receipt:" : "Receipt:"} <code style={{ fontFamily: "monospace" }}>{receiptId}</code>
           <Link2 size={10} />
-          <span style={{ opacity: 0.7 }}>arc-testnet · USDC</span>
+          <span style={{ opacity: 0.7 }}>{receiptMode === "fallback" ? "fallback / no live settlement" : "arc-testnet / USDC"}</span>
         </div>
       )}
 
