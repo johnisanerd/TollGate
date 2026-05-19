@@ -20,13 +20,13 @@ function paidGatewayHeaders(agentId: string, extra: Record<string, string> = {})
   return { "X-Agent-Id": agentId, ...extra };
 }
 
-function shortFlowError(err: unknown, fallback = "Live service unavailable. Saved as a local fallback receipt; no on-chain claim was made."): string {
+function shortFlowError(err: unknown, fallback = "Live service unavailable. Saved as a local fallback event; no on-chain claim was made."): string {
   const raw = err instanceof Error ? err.message : String(err ?? "");
   if (/execution reverted|CALL_EXCEPTION|estimateGas|unknown custom error/i.test(raw)) {
-    return "Arc registry rejected the live contract call. Saved as a local fallback receipt; no on-chain claim was made.";
+    return "Arc registry rejected the live contract call. Saved as a local fallback event; no on-chain claim was made.";
   }
   if (/not configured|No EIP-1193|wallet|Gateway|payment required/i.test(raw)) {
-    return "Live wallet, contract or gateway is unavailable. Saved as a local fallback receipt; no on-chain claim was made.";
+    return "Live wallet, contract or gateway is unavailable. Saved as a local fallback event; no on-chain claim was made.";
   }
   return raw.slice(0, 180) || fallback;
 }
@@ -568,16 +568,7 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
       const note = shortFlowError(e);
       setAgentId(id);
       setRegTxHash(null);
-      setOnchainErr(note);
-      emitReceipt({
-        workspaceId: workspace.id,
-        serviceName: "Local fallback ArcMind agent registration",
-        amount: 0,
-        currency: "USDC",
-        network: "arc-testnet",
-        kind: "arcmind.agent.register.local_fallback",
-        payload: { agentId: id, fallback: true, reason: note },
-      });
+      setOnchainErr(`${note} Local registry draft created; no paid receipt was issued.`);
     } finally {
       setOnchainLoading(null);
     }
@@ -593,18 +584,8 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
       setDecTxHash(txHash);
     } catch (e: unknown) {
       const note = shortFlowError(e);
-      const receiptId = localReceiptId("decision_local");
       setDecTxHash(null);
-      setOnchainErr(note);
-      emitReceipt({
-        workspaceId: workspace.id,
-        serviceName: "Local fallback ArcMind decision record",
-        amount: 0,
-        currency: "USDC",
-        network: "arc-testnet",
-        kind: "arcmind.decision.record.local_fallback",
-        payload: { agentId, receiptId, traces: purchased, fallback: true, reason: note },
-      });
+      setOnchainErr(`${note} Decision kept as a local registry draft; no paid receipt was issued.`);
     } finally {
       setOnchainLoading(null);
     }
@@ -638,16 +619,15 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
       const receiptId = localReceiptId("trace_local");
       const note = shortFlowError(e);
       setPurchased((prev: string[]) => prev.includes(trace.id) ? prev : [...prev, trace.id]);
-      setRevenue((r: number) => r + trace.price);
-      setBuyErr(note);
+      setBuyErr(`${note} Trace opened locally; live $0.01 x402 charge did not settle.`);
       emitReceipt({
         workspaceId: workspace.id,
-        serviceName: `Local fallback Reasoning Trace: ${trace.title}`,
-        amount: trace.price,
+        serviceName: `Trace unlock fallback - no live USDC charged: ${trace.title}`,
+        amount: 0,
         currency: "USDC",
         network: "arc-testnet",
         kind: "arcmind.trace.purchase.local_fallback",
-        payload: { traceId: trace.id, receiptId, fallback: true, reason: note },
+        payload: { traceId: trace.id, receiptId, displayPrice: trace.price, fallback: true, reason: note },
       });
     } finally {
       setBuying(null);
@@ -686,15 +666,15 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
         </span>
       </div>
       <p className="text-xs text-gray-400">
-        Buy ArcMind's step-by-step decision logs for $0.01 each via Arc Nanopayments.
-        Each trace is an x402 HTTP receipt — verifiable on-chain.
+        Live trace unlocks cost $0.01 through x402/Circle Gateway. Registry writes are separate
+        smart-contract actions; local fallback unlocks are free and marked as no live settlement.
       </p>
 
             <FlowExplainer
         items={[
           { label: "Why it exists", value: "Users see why the agent wants to copy, reduce, hold USDC or move to yield." },
           { label: "Source proof", value: "Live traces come from /api/arc-decisions and ArcMindRegistry; local fallback traces are marked local." },
-          { label: "Payment", value: "Unlock uses x402/Circle Gateway when available; fallback receipts are not claimed as live settlement." },
+          { label: "Payment", value: "Trace unlock = $0.01 x402. Register/Record = ArcMindRegistry smart-contract write; no trace fee." },
           { label: "Safety", value: "Refund review flags a receipt without hiding the evidence already revealed." },
         ]}
       />
@@ -1408,12 +1388,12 @@ export function ArcMindKillSwitchWidget({ workspace }: { workspace: Workspace })
     } catch { /* user rejected — proceed without sig */ }
     emitReceipt({
       workspaceId: workspace.id,
-      serviceName: `Kill Switch triggered — drawdown ${dd.toFixed(1)}%`,
+      serviceName: `Kill Switch safety drill - drawdown ${dd.toFixed(1)}%`,
       amount: 0,
       currency: "USDC",
-      network: "arc-l1",
-      kind: "arcmind.killswitch.trigger",
-      payload: { drawdown: dd, sig: sig ?? null, signed: Boolean(sig), localEventId: `killswitch-${workspace.id}-${Date.now()}` },
+      network: "arc-testnet",
+      kind: "arcmind.killswitch.safety_drill",
+      payload: { drawdown: dd, sig: sig ?? null, signed: Boolean(sig), liveMode: false, localEventId: `killswitch-${workspace.id}-${Date.now()}` },
     });
   }
 
@@ -1445,6 +1425,15 @@ export function ArcMindKillSwitchWidget({ workspace }: { workspace: Workspace })
           <span className="ml-auto text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full animate-pulse">MONITORING</span>
         )}
       </div>
+
+      <FlowExplainer
+        items={[
+          { label: "Source", value: "Reads the last ArcMind BUY entry, live ETH price and recent decision count from /api/arc-decisions." },
+          { label: "Trigger", value: "If drawdown crosses your threshold, the monitor creates a signed kill order and stops new exposure." },
+          { label: "Funds", value: "In live contract mode this would close copy positions, pause the job and settle remaining USDC back to the wallet." },
+          { label: "Current mode", value: "Safety drill only: it proves the control path and receipt trail; it does not move funds." },
+        ]}
+      />
 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg bg-white/5 p-3">
@@ -1491,8 +1480,9 @@ export function ArcMindKillSwitchWidget({ workspace }: { workspace: Workspace })
 
       <div className="text-xs text-gray-500 space-y-0.5">
         <div className="flex justify-between"><span>Protocol</span><span>ERC-8183 Job Contract</span></div>
-        <div className="flex justify-between"><span>On trigger</span><span>Close all · pause 6h · refund remaining</span></div>
-        <div className="flex justify-between"><span>Settlement</span><span>USDC · Arc L1</span></div>
+        <div className="flex justify-between"><span>On trigger</span><span>Close all / pause 6h / refund remaining</span></div>
+        <div className="flex justify-between"><span>Settlement</span><span>USDC / Arc testnet when contract is configured</span></div>
+        <div className="flex justify-between"><span>Execution mode</span><span className="text-amber-300">local safety drill / no funds moved</span></div>
         {entryEthPrice > 0 && (
           <div className="flex justify-between">
             <span>Entry (last BUY)</span>
@@ -1519,7 +1509,7 @@ export function ArcMindKillSwitchWidget({ workspace }: { workspace: Workspace })
         <div className="space-y-3">
           <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-3 text-xs text-red-300">
             <AlertTriangle className="w-3.5 h-3.5 inline mr-1.5" />
-            Kill Switch triggered. All positions closed. ERC-8183 job paused. Remaining USDC refunded.
+            Safety drill triggered. In live contract mode this same path would close positions, pause the job and refund remaining USDC.
           </div>
           {killSig && (
             <div className="rounded-lg bg-white/5 p-2.5 text-[10px] font-mono text-gray-500 break-all leading-relaxed">
@@ -1532,7 +1522,13 @@ export function ArcMindKillSwitchWidget({ workspace }: { workspace: Workspace })
           </button>
         </div>
       ) : (
-        <div className="flex gap-2">
+        <div className="space-y-3">
+          <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-xs text-gray-400">
+            {running
+              ? "Monitor is armed. It checks drawdown against your threshold every 10 seconds and will stop itself if the threshold is hit."
+              : "Monitor is paused. No positions are touched; use Arm Monitor to start watching the risk rule."}
+          </div>
+          <div className="flex gap-2">
           <button
             onClick={() => setRunning((r: boolean) => !r)}
             className={`flex-1 rounded-lg text-sm font-semibold py-2.5 transition-colors flex items-center justify-center gap-2 ${
@@ -1548,8 +1544,9 @@ export function ArcMindKillSwitchWidget({ workspace }: { workspace: Workspace })
             onClick={simulateCrash}
             className="rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 text-sm px-4 py-2.5 transition-colors"
           >
-            Simulate Crash
+            Run safety drill
           </button>
+          </div>
         </div>
       )}
     </div>

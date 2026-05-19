@@ -881,7 +881,7 @@ function productTabCopy(workspace: Workspace, tabLabel: string, fallbackTitle: s
   if (workspace.id === "agora") {
     if (t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard")) return { title: "Decision Guard", sub: "Live market sources, debate, PnL and decision logs for HOLD, REDUCE or ALLOW actions on Arc.", intent: "RFB 02 / 03", proof: "sourced signals + Arc receipts" };
     if (t.includes("reasoning") || t.includes("trace")) return { title: "Reasoning trace marketplace", sub: "Inspect the evidence, confidence shift and source contribution behind each agent decision.", intent: "RFB 06", proof: "trace hash + paid unlock" };
-    if (t.includes("copy")) return { title: "Copy trading lifecycle", sub: "Set stake, monitor decay, pause, stop or reduce allocation before blind copy-trading can hurt the user.", intent: "RFB 06", proof: "copy controls + risk rules" };
+    if (t.includes("copy")) return { title: "Copy ArcMind strategy", sub: "Start, pause, withdraw and settle a copy session from ArcMind's ETH/USDC decisions. No backtest fee is charged here.", intent: "RFB 06", proof: "copy controls + risk rules" };
     if (t.includes("kill")) return { title: "Autonomous risk kill switch", sub: "Configure drawdown, liquidation and source-divergence protections before the agent keeps trading.", intent: "RFB 01", proof: "Telegram + Arc action trail" };
     if (t.includes("usyc") || t.includes("yield") || t.includes("swap") || t.includes("risk-off") || t.includes("vault")) return { title: "Risk-off capital router", sub: "Move idle capital between USDC, USYC and swap routes when the agent detects hostile conditions.", intent: "RFB 04", proof: "USDC denominated settlement" };
     if (t.includes("arbitrage") || t.includes("arb") || t.includes("engine")) return { title: "Cross-platform arbitrage route", sub: "Detect price gaps, choose route, estimate slippage and show the CCTP/Gateway path before execution.", intent: "RFB 05", proof: "route + receipt" };
@@ -2152,7 +2152,7 @@ export function ServiceTabPage({
       {workspace.id === "arbitrum" && t.includes("escrow") && <ArbitrumEscrowPanel workspace={workspace} />}
       {workspace.id === "arbitrum" && t.includes("escrow") && <ArbDisputePanel workspace={workspace} />}
 
-      {(t.includes("strateg") || t.includes("sandbox")) && <BacktestRunner workspace={workspace} />}
+      {workspace.id !== "agora" && (t.includes("strateg") || t.includes("sandbox")) && <BacktestRunner workspace={workspace} />}
 
       {workspace.id === "0g" && (t.includes("privacy") || t.includes("sovereign") || (variant === "verify" && !t.includes("pass") && !t.includes("rule") && !t.includes("risk"))) && (
         <OgPrivacyStepper workspace={workspace} />
