@@ -167,6 +167,7 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
   );
   const [stake, setStake] = useState("10");
   const [following, setFollowing] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [totalPnl, setTotalPnl] = useState(0);
   const [stakeErr, setStakeErr] = useState<string | null>(null);
   const [staking, setStaking] = useState(false);
@@ -181,7 +182,7 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
 
   // Real PnL: (livePrice - entry) * size for ETH positions; stop ticking after
   useEffect(() => {
-    if (!following) return;
+    if (!following || paused) return;
     tickRef.current = setInterval(() => {
       setPositions((prev: CopyPosition[]) =>
         prev.map((p: CopyPosition) => {
@@ -194,7 +195,7 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
       );
     }, 10_000);
     return () => { if (tickRef.current) clearInterval(tickRef.current); };
-  }, [following]);
+  }, [following, paused]);
 
   useEffect(() => {
     setTotalPnl(positions.reduce((s: number, p: CopyPosition) => s + p.pnl, 0));
@@ -267,6 +268,7 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
 
     setPositions(pos);
     setFollowing(true);
+    setPaused(false);
     setStakeErr(fallbackNote);
     emitReceipt({
       workspaceId: workspace.id,
@@ -284,6 +286,7 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
     const stakeAmount = safeAmt(stake, 10_000) ?? 10;
     const settlementAmount = Math.max(0, stakeAmount + totalPnl);
     setFollowing(false);
+    setPaused(false);
     if (tickRef.current) clearInterval(tickRef.current);
     setPositions([]);
     emitReceipt({
@@ -309,8 +312,8 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
         <Copy className="w-5 h-5 text-purple-400" />
         <h3 className="font-semibold text-white">Copy ArcMind</h3>
         {following && (
-          <span className="ml-auto text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full animate-pulse">
-            LIVE
+          <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${paused ? "bg-yellow-500/20 text-yellow-300" : "bg-green-500/20 text-green-400 animate-pulse"}`}>
+            {paused ? "PAUSED" : "LIVE"}
           </span>
         )}
       </div>
@@ -424,6 +427,15 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
             </button>
           </div>
           <button
+            onClick={() => {
+              setPaused((p: boolean) => !p);
+              setStakeErr(paused ? "Copy trading resumed. Existing positions remain open." : "Copy trading paused. Existing positions are kept, no new PnL ticks are applied.");
+            }}
+            className="w-full rounded-lg border border-white/20 text-gray-300 hover:bg-white/5 text-sm font-semibold py-2.5 transition-colors"
+          >
+            {paused ? "Resume Copy Trading" : "Pause New Copies"}
+          </button>
+          <button
             onClick={stopCopying}
             className="w-full rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 text-sm font-semibold py-2.5 transition-colors"
           >
@@ -490,6 +502,7 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
   const displayTraces = liveTraces;
   const hasLiveTraces = displayTraces.some((trace) => trace.id.startsWith("live-"));
   const [purchased, setPurchased] = useLocalStore<string[]>(`arcmind-traces-${workspace.id}`, []);
+  const [refundRequests, setRefundRequests] = useLocalStore<string[]>(`arcmind-trace-refunds-${workspace.id}`, []);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [revenue, setRevenue] = useLocalStore<number>(`arcmind-revenue-${workspace.id}`, 0);
@@ -621,6 +634,21 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
     setTimeout(() => setCopied(null), 1500);
   }
 
+  function requestTraceRefund(trace: Trace) {
+    if (refundRequests.includes(trace.id)) return;
+    setRefundRequests((prev: string[]) => [...prev, trace.id]);
+    setBuyErr(`Refund review opened for ${trace.title}. Revealed traces stay visible, but the receipt is flagged for operator review.`);
+    emitReceipt({
+      workspaceId: workspace.id,
+      serviceName: `Refund review: ${trace.title}`,
+      amount: 0,
+      currency: "USDC",
+      network: "arc-testnet",
+      kind: "arcmind.trace.refund_review",
+      payload: { traceId: trace.id, originalPrice: trace.price, receiptId: demoReceiptId("trace_refund_review") },
+    });
+  }
+
   return (
     <div className="rounded-xl border border-indigo-500/20 bg-indigo-950/20 p-5 space-y-4">
       <div className="flex items-center gap-2">
@@ -701,6 +729,13 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
                             <ExternalLink className="w-3 h-3" /> Resolved ↗ +rep
                           </a>
                         )}
+                        <button
+                          onClick={() => requestTraceRefund(trace)}
+                          disabled={refundRequests.includes(trace.id)}
+                          className="flex items-center gap-1 text-xs text-amber-300 hover:text-amber-200 disabled:opacity-50"
+                        >
+                          {refundRequests.includes(trace.id) ? "Refund review opened" : "Request refund review"}
+                        </button>
                       </div>
                     </>
                   ) : (
@@ -745,6 +780,14 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
               {onchainLoading === "record" ? "Recording…" : "Record Decision"}
             </button>
           </div>
+          {agentId && (
+            <button
+              onClick={() => { setAgentId(null); setRegTxHash(null); setDecTxHash(null); setOnchainErr("Demo registry state cleared. Register again when you want to write a new decision path."); }}
+              className="w-full rounded-lg border border-white/15 text-gray-400 hover:bg-white/5 text-xs font-semibold py-2 transition-colors"
+            >
+              Clear registry state
+            </button>
+          )}
           {regTxHash && (
             <a href={arcExplorerTxUrl(regTxHash)} target="_blank" rel="noreferrer"
               className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300">
@@ -891,12 +934,33 @@ export function ArcMindSignalHubWidget({ workspace }: { workspace: Workspace }) 
     setDecision(`ArcMind synthesised ${signals.length} signals → ${direction}${ethStr}. Recommended: ${action}. ERC-8183 job queued.`);
   }
 
+  function removeSignal(sourceId: string) {
+    setSignals((prev: FetchedSignal[]) => prev.filter((signal) => signal.id !== sourceId));
+    setDecision(null);
+    setQueryAnswer("Source removed. Compose a new decision after refreshing the remaining feeds.");
+  }
+
+  function clearSignalSession() {
+    setSignals([]);
+    setDecision(null);
+    setSignalsData(null);
+    setQueryText("");
+    setQueryAnswer("Signal session cleared. No stale source is being used for the next decision.");
+  }
+
   return (
     <div className="rounded-xl border border-cyan-500/20 bg-cyan-950/20 p-5 space-y-4">
       <div className="flex items-center gap-2">
         <Zap className="w-5 h-5 text-cyan-400" />
         <h3 className="font-semibold text-white">Signal Hub</h3>
-        <span className="ml-auto text-xs text-gray-500">{signals.length}/4 fetched</span>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-gray-500">{signals.length}/4 fetched</span>
+          {signals.length > 0 && (
+            <button onClick={clearSignalSession} className="text-[10px] px-2 py-1 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5">
+              Clear
+            </button>
+          )}
+        </div>
       </div>
       <p className="text-xs text-gray-400">
         Buy individual data feeds via x402 micropayments. Compose into a unified ArcMind signal.
@@ -931,6 +995,14 @@ export function ArcMindSignalHubWidget({ workspace }: { workspace: Workspace }) 
                 >
                   {isLoading ? "..." : fetched ? "Refresh" : "Fetch"}
                 </button>
+                {fetched && (
+                  <button
+                    onClick={() => removeSignal(src.id)}
+                    className="mt-1 block w-full text-[10px] px-2 py-1 rounded-lg border border-white/10 text-gray-500 hover:text-red-300 hover:border-red-500/30"
+                  >
+                    Remove
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -949,6 +1021,14 @@ export function ArcMindSignalHubWidget({ workspace }: { workspace: Workspace }) 
       {decision && (
         <div className="rounded-lg bg-white/5 border border-cyan-500/30 p-3 text-xs text-gray-300 leading-relaxed">
           <span className="text-cyan-400 font-semibold">Decision: </span>{decision}
+          <div className="mt-2 flex gap-2 flex-wrap">
+            <button onClick={() => setDecision(null)} className="text-[10px] px-2 py-1 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5">
+              Cancel queued decision
+            </button>
+            <button onClick={clearSignalSession} className="text-[10px] px-2 py-1 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5">
+              Clear session
+            </button>
+          </div>
         </div>
       )}
 

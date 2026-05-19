@@ -9,7 +9,7 @@
  *   5. Net profit captured, receipt signed (EIP-191)
  *   6. AgentScore updated live
  */
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 const SERVER_URL = (import.meta.env as Record<string, string | undefined>)["VITE_SERVER_URL"] ?? "";
 import {
@@ -104,6 +104,7 @@ export function AgoraTradingWidget() {
   const [profit, setProfit]   = useState<number | null>(null);
   const [paid, setPaid]       = useState<number | null>(null);
   const [remaining, setRemaining] = useState(() => getRemainingToday(AGENT_ID));
+  const cancelRef = useRef(false);
 
   useEffect(() => { setRemaining(getRemainingToday(AGENT_ID)); }, []);
 
@@ -111,9 +112,17 @@ export function AgoraTradingWidget() {
   function setStep(id: string, status: StepStatus, detail?: string) {
     setSteps((prev) => prev.map((s) => s.id === id ? { ...s, status, detail: detail ?? s.detail } : s));
   }
+  function wasCancelled() {
+    if (!cancelRef.current) return false;
+    addLog("Run cancelled by user. No further paid actions will be executed.");
+    setSteps((prev) => prev.map((s) => s.status === "running" ? { ...s, status: "failed" as StepStatus, detail: "Cancelled by user" } : s));
+    setRunning(false);
+    return true;
+  }
 
   async function runAgent() {
     if (running) return;
+    cancelRef.current = false;
     setRunning(true); setDone(false); setLog([]);
     setSteps(INITIAL_STEPS.map((s) => ({ ...s, status: "idle" as StepStatus, detail: undefined })));
     setReceiptId(null); setProfit(null); setPaid(null);
@@ -145,6 +154,7 @@ export function AgoraTradingWidget() {
       setStep("oracle", "done", `Arc: $${arcPrice} · Base: $${basePrice} · gap: $${gap.toFixed(4)}${oracleReceiptId ? " · rcpt ✓" : ""}`);
       addLog(`✓ Oracle: price gap $${gap.toFixed(4)} detected · profitable threshold met`);
       await sleep(300);
+      if (wasCancelled()) return;
 
       // Step 2: Budget check
       setStep("budget", "running");
@@ -160,6 +170,7 @@ export function AgoraTradingWidget() {
       setStep("budget", "done", `Approved — $${getRemainingToday(AGENT_ID).toFixed(2)} remaining after this tx`);
       addLog("✓ AgentBudget: $0.07 approved (oracle $0.02 + executor $0.05)");
       await sleep(300);
+      if (wasCancelled()) return;
 
       // Step 3: Pay x402 — real gateway call
       setStep("pay", "running");
@@ -187,6 +198,7 @@ export function AgoraTradingWidget() {
       addLog(`✓ Payment verified via Circle Nanopayments — receipt ${rid}`);
       updateReputation(AGENT_ID, { amountUsd: 0.07, success: true });
       await sleep(300);
+      if (wasCancelled()) return;
 
       // Step 4: CCTP swap
       setStep("cctp", "running");
@@ -196,6 +208,7 @@ export function AgoraTradingWidget() {
       setStep("cctp", "done", `500 USDC Arc → Base · tx ${cctpTx.slice(0, 14)}… · 423ms`);
       addLog(`✓ CCTP: 500 USDC transferred in 423ms · Circle attestation confirmed`);
       await sleep(300);
+      if (wasCancelled()) return;
 
       // Step 5: Profit
       setStep("profit", "running");
@@ -207,6 +220,7 @@ export function AgoraTradingWidget() {
       setStep("profit", "done", `+$${netProfit.toFixed(4)} net · EIP-191 sig ${sig.slice(0, 12)}…`);
       addLog(`✓ Profit: $${netProfit.toFixed(4)} captured · receipt signed via Nanopayments`);
       await sleep(300);
+      if (wasCancelled()) return;
 
       // Step 6: AgentScore
       setStep("score", "running");
@@ -227,9 +241,14 @@ export function AgoraTradingWidget() {
   }
 
   function reset() {
+    cancelRef.current = false;
     setSteps(INITIAL_STEPS.map((s) => ({ ...s, status: "idle" as StepStatus, detail: undefined })));
     setLog([]); setDone(false); setReceiptId(null); setProfit(null); setPaid(null);
     setRemaining(getRemainingToday(AGENT_ID));
+  }
+
+  function cancelRun() {
+    cancelRef.current = true;
   }
 
   return (
@@ -321,6 +340,12 @@ export function AgoraTradingWidget() {
           <Zap size={12} />
           {running ? "Running…" : done ? "▶ Run again" : "▶ Run autonomous arb agent"}
         </button>
+        {running && (
+          <button className="btn sm" onClick={cancelRun}
+            style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            Cancel
+          </button>
+        )}
         {(done || log.length > 0) && (
           <button className="btn sm" onClick={reset}
             style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", gap: 4 }}>

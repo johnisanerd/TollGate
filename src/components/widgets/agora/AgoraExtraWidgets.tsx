@@ -34,7 +34,7 @@ async function fetchLivePrices(): Promise<{ eth: number }> {
 }
 
 type Holding = { symbol: string; weight: number; value: number; price: number; color: string };
-type RebalanceTrade = { from: string; to: string; amount: number; hash: string; ts: string };
+type RebalanceTrade = { from: string; to: string; amount: number; hash: string; ts: string; kind?: "rebalance" | "risk-off" | "restore" };
 
 export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
   const [holdings, setHoldings] = useLocalStore<Holding[]>(
@@ -44,11 +44,13 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
   const [trades, setTrades] = useLocalStore<RebalanceTrade[]>(`agora-trades-${workspace.id}`, []);
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState("");
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const total = holdings.reduce((s, h) => s + h.value, 0);
 
   async function rebalance() {
     setRunning(true);
+    setActionMessage(null);
     setPhase("Fetching live prices via CoinGecko…");
 
     let liveEth = ASSETS[1].price;
@@ -107,14 +109,46 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
           amount: +Math.abs(delta).toFixed(2),
           hash: rebalanceReceiptId.slice(0, 14) + (i > 0 ? `[${i}]` : ""),
           ts: new Date().toLocaleTimeString(),
+          kind: "rebalance",
         });
       }
     });
 
     setHoldings(newHoldings);
     setTrades(prev => [...newTrades, ...prev].slice(0, 20));
+    setActionMessage("Portfolio rebalanced. User can still move the full position back to USDC or restore the model target.");
     setPhase("");
     setRunning(false);
+  }
+
+  function moveToCash() {
+    const ethValue = holdings.find((h) => h.symbol === "ETH")?.value ?? 0;
+    setHoldings([
+      { ...ASSETS[0], weight: 100, value: +total.toFixed(2) },
+      { ...ASSETS[1], weight: 0, value: 0, price: holdings.find((h) => h.symbol === "ETH")?.price ?? ASSETS[1].price },
+    ]);
+    setTrades(prev => [{
+      from: "ETH",
+      to: "USDC",
+      amount: +ethValue.toFixed(2),
+      hash: demoReceiptId("portfolio_riskoff").slice(0, 14),
+      ts: new Date().toLocaleTimeString(),
+      kind: "risk-off" as const,
+    }, ...prev].slice(0, 20));
+    setActionMessage(`Risk-off executed. $${total.toFixed(2)} is now parked in USDC; ETH exposure is 0%.`);
+  }
+
+  function restoreModelTarget() {
+    setHoldings(ASSETS.map(a => ({ ...a, value: +(total * a.weight / 100).toFixed(2) })));
+    setTrades(prev => [{
+      from: "USDC",
+      to: "Model target",
+      amount: +total.toFixed(2),
+      hash: demoReceiptId("portfolio_restore").slice(0, 14),
+      ts: new Date().toLocaleTimeString(),
+      kind: "restore" as const,
+    }, ...prev].slice(0, 20));
+    setActionMessage("Model target restored to 70% USDC / 30% ETH.");
   }
 
   return (
@@ -125,10 +159,18 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
           <h3>Adaptive Portfolio Manager</h3>
           <div className="sub">ML signals → auto-rebalance via Circle CCTP on Arc L1 — no human clicks</div>
         </div>
-        <button className="btn btn-acc btn-sm" onClick={rebalance} disabled={running} style={{ marginLeft: "auto" }}>
-          {running ? <Loader2 size={13} className="wallet-spin" /> : <RefreshCw size={13} />}
-          {running ? phase.slice(0, 28) + "…" : "Rebalance"}
-        </button>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <button className="btn btn-sm" onClick={moveToCash} disabled={running} style={{ fontSize: 11 }}>
+            Risk-off to USDC
+          </button>
+          <button className="btn btn-sm" onClick={restoreModelTarget} disabled={running} style={{ fontSize: 11 }}>
+            Restore target
+          </button>
+          <button className="btn btn-acc btn-sm" onClick={rebalance} disabled={running} style={{ fontSize: 11 }}>
+            {running ? <Loader2 size={13} className="wallet-spin" /> : <RefreshCw size={13} />}
+            {running ? phase.slice(0, 28) + "..." : "Rebalance"}
+          </button>
+        </div>
       </div>
 
       <div style={{ marginBottom: 14 }}>
@@ -163,6 +205,12 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
           </div>
         ))}
       </div>
+
+      {actionMessage && (
+        <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid #10b98133", background: "#10b9810d", color: "#86efac", fontSize: 11, marginBottom: 12 }}>
+          {actionMessage}
+        </div>
+      )}
 
       {trades.length > 0 && (
         <div className="svc-table__scroll">
@@ -228,6 +276,7 @@ const CIRCLE_DEMOS = [
 
 export function AgoraCircleToolsWidget({ workspace: _ }: { workspace: Workspace }) {
   const [results, setResults] = useState<Record<string, string>>({});
+  const [states, setStates] = useState<Record<string, "active" | "settled" | "stopped" | "reversed" | "revoked">>({});
   const [loading, setLoading] = useState<string | null>(null);
 
   async function runCircleTool(tool: string) {
@@ -252,20 +301,41 @@ export function AgoraCircleToolsWidget({ workspace: _ }: { workspace: Workspace 
         const oi = data.data?.["oiValue"] ?? "live feed";
         const rate = data.data?.["fundingRate"] ?? "rate unavailable";
         setResults(prev => ({ ...prev, [tool]: `Stream active · OI ${oi} · ${rate} · receipt ${rcpt}…` }));
+        setStates(prev => ({ ...prev, [tool]: "active" }));
       } else if (tool === "USDC") {
         setResults(prev => ({ ...prev, [tool]: `100 USDC minted on Arc L1 · receipt ${rcpt}… · zero slippage` }));
+        setStates(prev => ({ ...prev, [tool]: "settled" }));
       } else if (tool === "CCTP") {
         setResults(prev => ({ ...prev, [tool]: `CCTP attested · Arc→Base 423ms · receipt ${rcpt}… · settled` }));
+        setStates(prev => ({ ...prev, [tool]: "settled" }));
       } else if (tool === "Prog. Wallets") {
         setResults(prev => ({ ...prev, [tool]: `Agent wallet 0x${rcpt}… created · policy $20/day enforced` }));
+        setStates(prev => ({ ...prev, [tool]: "active" }));
       } else {
         setResults(prev => ({ ...prev, [tool]: `Paymaster sponsored tx · gas $0.00 · receipt ${rcpt}… · USDC settled` }));
+        setStates(prev => ({ ...prev, [tool]: "settled" }));
       }
     } catch {
       const rcpt = demoReceiptId("circle_demo").slice(0, 10);
       setResults(prev => ({ ...prev, [tool]: `Demo receipt ${rcpt}... created; live gateway unavailable in this environment.` }));
+      setStates(prev => ({ ...prev, [tool]: tool === "Nanopayments" || tool === "Prog. Wallets" ? "active" : "settled" }));
     }
     setLoading(null);
+  }
+
+  function closeCircleTool(tool: string) {
+    const nextState =
+      tool === "Nanopayments" ? "stopped" :
+      tool === "Prog. Wallets" ? "revoked" :
+      tool === "CCTP" ? "reversed" :
+      "settled";
+    const label =
+      tool === "Nanopayments" ? "Stream stopped. No more per-minute charges will accrue." :
+      tool === "Prog. Wallets" ? "Agent wallet policy revoked. New automated spends are blocked." :
+      tool === "CCTP" ? "Return route queued. User can bridge funds back to Arc L1." :
+      "Settlement is final. Receipt kept for audit; no active session remains.";
+    setStates(prev => ({ ...prev, [tool]: nextState }));
+    setResults(prev => ({ ...prev, [tool]: label }));
   }
 
   return (
@@ -299,8 +369,18 @@ export function AgoraCircleToolsWidget({ workspace: _ }: { workspace: Workspace 
               </button>
             </div>
             {results[tool] && (
-              <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 6, background: `${color}0d`, fontSize: 10, color, fontFamily: "monospace" }}>
-                ✓ {results[tool]}
+              <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                <div style={{ padding: "6px 10px", borderRadius: 6, background: `${color}0d`, fontSize: 10, color, fontFamily: "monospace" }}>
+                  ✓ {results[tool]} {states[tool] ? `· ${states[tool]}` : ""}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button className="btn btn-sm" style={{ fontSize: 10, padding: "4px 8px" }} onClick={() => closeCircleTool(tool)}>
+                    {tool === "Nanopayments" ? "Stop stream" : tool === "Prog. Wallets" ? "Revoke policy" : tool === "CCTP" ? "Return route" : "Mark settled"}
+                  </button>
+                  <button className="btn btn-sm" style={{ fontSize: 10, padding: "4px 8px" }} onClick={() => { setResults(prev => { const next = { ...prev }; delete next[tool]; return next; }); setStates(prev => { const next = { ...prev }; delete next[tool]; return next; }); }}>
+                    Clear
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -323,6 +403,7 @@ export function AgoraX402Widget({ workspace }: { workspace: Workspace }) {
   const [calls, setCalls] = useLocalStore<{ svc: string; amount: number; hash: string; ts: string }[]>(
     `agora-x402-${workspace.id}`, []
   );
+  const [activeStreams, setActiveStreams] = useLocalStore<string[]>(`agora-x402-streams-${workspace.id}`, []);
   const [calling, setCalling] = useState<string | null>(null);
 
   async function callService(svc: typeof X402_SERVICES[0]) {
@@ -336,10 +417,17 @@ export function AgoraX402Widget({ workspace }: { workspace: Workspace }) {
       if (!res.ok || !data.receiptId) throw new Error("Gateway did not return a verified receipt");
       const hash = data.receiptId.slice(0, 16);
       setCalls(prev => [{ svc: svc.name, amount: svc.price, hash, ts: new Date().toLocaleTimeString() }, ...prev].slice(0, 30));
+      if (svc.id === "svc_arc_alert") setActiveStreams(prev => prev.includes(svc.id) ? prev : [...prev, svc.id]);
     } catch {
       setCalls(prev => [{ svc: `${svc.name} unavailable`, amount: 0, hash: "no-receipt", ts: new Date().toLocaleTimeString() }, ...prev].slice(0, 30));
+      if (svc.id === "svc_arc_alert") setActiveStreams(prev => prev.includes(svc.id) ? prev : [...prev, svc.id]);
     }
     setCalling(null);
+  }
+
+  function stopStream(serviceId: string, serviceName: string) {
+    setActiveStreams(prev => prev.filter(id => id !== serviceId));
+    setCalls(prev => [{ svc: `${serviceName} stopped`, amount: 0, hash: "stream-closed", ts: new Date().toLocaleTimeString() }, ...prev].slice(0, 30));
   }
 
   const totalSpent = calls.reduce((s, c) => s + c.amount, 0);
@@ -379,25 +467,38 @@ export function AgoraX402Widget({ workspace }: { workspace: Workspace }) {
             <button className="btn btn-acc btn-sm" style={{ fontSize: 11 }} onClick={() => callService(svc)} disabled={calling === svc.id}>
               {calling === svc.id ? <><Loader2 size={11} className="wallet-spin" /> Calling…</> : <>Call · ${svc.price} USDC</>}
             </button>
+            {activeStreams.includes(svc.id) && (
+              <button className="btn btn-sm" style={{ fontSize: 10 }} onClick={() => stopStream(svc.id, svc.name)}>
+                Stop billing stream
+              </button>
+            )}
           </div>
         ))}
       </div>
       {calls.length > 0 && (
+        <>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <button className="btn btn-sm" style={{ fontSize: 10 }} onClick={() => { setCalls([]); setActiveStreams([]); }}>
+            Clear calls
+          </button>
+        </div>
         <div className="svc-table__scroll">
           <table className="svc-table">
-            <thead><tr><th>Service</th><th>Paid</th><th>Receipt</th><th>Time</th></tr></thead>
+            <thead><tr><th>Service</th><th>Paid</th><th>Receipt</th><th>Status</th><th>Time</th></tr></thead>
             <tbody>
               {calls.slice(0, 10).map((c, i) => (
                 <tr key={i}>
                   <td style={{ fontSize: 11 }}>{c.svc}</td>
                   <td className="svc-table__num" style={{ color: "#1652F0" }}>${c.amount.toFixed(3)}</td>
                   <td style={{ fontSize: 10 }}><code>{c.hash}…</code></td>
+                  <td style={{ fontSize: 10 }}>{c.hash === "stream-closed" ? "stopped" : c.amount > 0 ? "paid" : "fallback"}</td>
                   <td className="svc-table__num" style={{ fontSize: 10 }}>{c.ts}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );
@@ -486,11 +587,13 @@ export function AgoraCctpWidget({ workspace: _ }: { workspace: Workspace }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{ hash: string; time: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [settlementNote, setSettlementNote] = useState<string | null>(null);
 
   async function transfer() {
     setRunning(true);
     setResult(null);
     setError(null);
+    setSettlementNote(null);
     const start = Date.now();
     try {
       const res = await fetch(`${SERVER_URL}/api/gateway/svc_arc_arb`, {
@@ -505,6 +608,15 @@ export function AgoraCctpWidget({ workspace: _ }: { workspace: Workspace }) {
       setError("CCTP gateway unavailable. Demo transfer receipt created for the review flow.");
     }
     setRunning(false);
+  }
+
+  function reverseRoute() {
+    const oldFrom = from;
+    setFrom(to);
+    setTo(oldFrom);
+    setResult(null);
+    setError(null);
+    setSettlementNote(`Return route prepared: ${to} -> ${oldFrom}. Click Transfer to bridge funds back.`);
   }
 
   return (
@@ -540,6 +652,11 @@ export function AgoraCctpWidget({ workspace: _ }: { workspace: Workspace }) {
           {error}
         </div>
       )}
+      {settlementNote && (
+        <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid #60a5fa44", background: "#60a5fa12", color: "#93c5fd", fontSize: 11, marginBottom: 12 }}>
+          {settlementNote}
+        </div>
+      )}
       {result && (
         <div style={{ padding: "12px 14px", borderRadius: 10, border: "1.5px solid #1652F033", background: "#1652F00a" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
@@ -557,6 +674,10 @@ export function AgoraCctpWidget({ workspace: _ }: { workspace: Workspace }) {
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#1652F0" }}>{g.val}</div>
               </div>
             ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <button className="btn btn-sm" style={{ fontSize: 10 }} onClick={reverseRoute}>Bridge back</button>
+            <button className="btn btn-sm" style={{ fontSize: 10 }} onClick={() => { setResult(null); setError(null); setSettlementNote("Receipt hidden. Transfer history remains available in the Receipts tab."); }}>Clear receipt</button>
           </div>
         </div>
       )}
@@ -705,6 +826,21 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
     setSending(false);
   }
 
+  function prepareBridgeBack() {
+    const oldFrom = bridgeFrom;
+    setBridgeFrom(bridgeTo);
+    setBridgeTo(oldFrom);
+    setBridgeResult(null);
+    setAppKitError(`Return route prepared: ${bridgeTo} -> ${oldFrom}.`);
+  }
+
+  function prepareReverseSwap() {
+    setSwapSide((s) => s === "BUY" ? "SELL" : "BUY");
+    setSwapQuote(null);
+    setSwapDone(null);
+    setAppKitError("Reverse swap prepared. Fetch a fresh quote before execution.");
+  }
+
   return (
     <div className="widget-card">
       <div className="widget-header">
@@ -796,6 +932,10 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
               <CheckCircle size={12} style={{ color: "#10B981", display: "inline", marginRight: 6 }} />
               <span style={{ color: "#10B981", fontWeight: 700 }}>Bridged via Circle CCTP</span>
               <span style={{ color: "var(--text-secondary)", marginLeft: 8 }}>Receipt: {bridgeResult.slice(0, 14)}…</span>
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <button className="btn btn-sm" style={{ fontSize: 10, padding: "4px 8px" }} onClick={prepareBridgeBack}>Bridge back</button>
+                <button className="btn btn-sm" style={{ fontSize: 10, padding: "4px 8px" }} onClick={() => setBridgeResult(null)}>Clear receipt</button>
+              </div>
             </div>
           )}
         </div>
@@ -835,6 +975,10 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
               <CheckCircle size={12} style={{ color: "#10B981", display: "inline", marginRight: 6 }} />
               <span style={{ color: "#10B981", fontWeight: 700 }}>Swap executed on Arc DEX</span>
               <span style={{ color: "var(--text-secondary)", marginLeft: 8 }}>Receipt: {swapDone.slice(0, 14)}…</span>
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <button className="btn btn-sm" style={{ fontSize: 10, padding: "4px 8px" }} onClick={prepareReverseSwap}>Reverse swap</button>
+                <button className="btn btn-sm" style={{ fontSize: 10, padding: "4px 8px" }} onClick={() => setSwapDone(null)}>Clear receipt</button>
+              </div>
             </div>
           )}
         </div>
@@ -859,6 +1003,14 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
               <CheckCircle size={12} style={{ color: "#10B981", display: "inline", marginRight: 6 }} />
               <span style={{ color: "#10B981", fontWeight: 700 }}>Sent via Arc L1</span>
               <span style={{ color: "var(--text-secondary)", marginLeft: 8 }}>Receipt: {sendDone.slice(0, 14)}…</span>
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <button className="btn btn-sm" style={{ fontSize: 10, padding: "4px 8px" }} onClick={() => { setSendTo(""); setSendAmt("10"); setSendDone(null); }}>
+                  New transfer
+                </button>
+                <button className="btn btn-sm" style={{ fontSize: 10, padding: "4px 8px" }} onClick={() => setSendDone(null)}>
+                  Clear receipt
+                </button>
+              </div>
             </div>
           )}
           <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border-subtle)", fontSize: 10, color: "var(--text-secondary)" }}>
@@ -873,7 +1025,7 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
 // ── Arc DEX Swap Execution ──────────────────────────────────────────────────────
 
 interface SwapQuote { pair: string; side: string; amountIn: number; amountOut: number; price: number; slippagePct: number }
-interface SwapReceipt { svc: string; side: string; amountIn: number; amountOut: number; price: number; hash: string; ts: string }
+interface SwapReceipt { svc: string; side: string; amountIn: number; amountOut: number; price: number; hash: string; ts: string; status?: "open" | "closed" | "reversed" }
 
 export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
@@ -922,17 +1074,40 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
       const hash = data.receiptId.slice(0, 16);
       setSwaps(prev => [{
         svc: "Arc DEX", side, amountIn: quote.amountIn, amountOut: quote.amountOut,
-        price: quote.price, hash, ts: new Date().toLocaleTimeString(),
+        price: quote.price, hash, ts: new Date().toLocaleTimeString(), status: "open" as const,
       }, ...prev].slice(0, 20));
     } catch {
       const hash = demoReceiptId("swap_demo").slice(0, 16);
       setSwaps(prev => [{
         svc: "Arc DEX demo", side, amountIn: quote.amountIn, amountOut: quote.amountOut,
-        price: quote.price, hash, ts: new Date().toLocaleTimeString(),
+        price: quote.price, hash, ts: new Date().toLocaleTimeString(), status: "open" as const,
       }, ...prev].slice(0, 20));
       setSwapError("Swap gateway unavailable. Demo swap receipt created for the review flow.");
     }
     setExecuting(false);
+  }
+
+  function reverseLatestSwap() {
+    const latest = swaps.find((s) => (s.status ?? "open") === "open");
+    if (!latest) {
+      setSwapError("No open swap to reverse.");
+      return;
+    }
+    const reverseSide: "BUY" | "SELL" = latest.side === "BUY" ? "SELL" : "BUY";
+    setSwaps(prev => [
+      {
+        svc: "Arc DEX reversal",
+        side: reverseSide,
+        amountIn: latest.amountOut,
+        amountOut: latest.amountIn,
+        price: latest.price,
+        hash: demoReceiptId("swap_reverse").slice(0, 16),
+        ts: new Date().toLocaleTimeString(),
+        status: "reversed" as const,
+      },
+      ...prev.map((s) => s.hash === latest.hash ? { ...s, status: "closed" as const } : s),
+    ].slice(0, 20));
+    setSwapError("Latest open swap reversed in the review flow. Fetch a new quote for the next trade.");
   }
 
   const totalVol = swaps.reduce((s, r) => s + r.amountIn, 0);
@@ -948,8 +1123,16 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
           <div className="sub">ArcMind executes BUY/SELL at real ETH market price — paid via x402 per trade</div>
         </div>
         {swaps.length > 0 && (
-          <div style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: "#7C3AED" }}>
-            ${totalVol.toFixed(0)} vol · {swaps.length} trades
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#7C3AED" }}>
+              ${totalVol.toFixed(0)} vol · {swaps.length} trades
+            </div>
+            <button className="btn btn-sm" style={{ fontSize: 10, padding: "4px 8px" }} onClick={reverseLatestSwap}>
+              Reverse latest
+            </button>
+            <button className="btn btn-sm" style={{ fontSize: 10, padding: "4px 8px" }} onClick={() => setSwaps([])}>
+              Clear history
+            </button>
           </div>
         )}
       </div>
@@ -1012,7 +1195,7 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
       {swaps.length > 0 && (
         <div className="svc-table__scroll">
           <table className="svc-table">
-            <thead><tr><th>Side</th><th>In</th><th>Out</th><th>Price</th><th>Receipt</th><th>Time</th></tr></thead>
+            <thead><tr><th>Side</th><th>In</th><th>Out</th><th>Price</th><th>Receipt</th><th>Status</th><th>Time</th></tr></thead>
             <tbody>
               {swaps.slice(0, 8).map((s, i) => (
                 <tr key={i}>
@@ -1021,6 +1204,7 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
                   <td className="svc-table__num">{s.side === "BUY" ? `${s.amountOut.toFixed(5)} ETH` : `$${s.amountOut.toFixed(2)}`}</td>
                   <td className="svc-table__num">${s.price.toLocaleString()}</td>
                   <td style={{ fontSize: 10 }}><code>{s.hash}…</code></td>
+                  <td style={{ fontSize: 10 }}>{s.status ?? "open"}</td>
                   <td className="svc-table__num" style={{ fontSize: 10 }}>{s.ts}</td>
                 </tr>
               ))}
@@ -1096,6 +1280,15 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
     setYieldError("USYC redemption queued. Demo redeem receipt created for the review flow.");
   }
 
+  function redeemAll() {
+    setDeposits(prev => prev.map((dep) => dep.redeemedAt ? dep : {
+      ...dep,
+      redeemedAt: Date.now(),
+      redeemHash: demoReceiptId("usyc_redeem_all").slice(0, 16),
+    }));
+    setYieldError("All active USYC positions queued for redemption.");
+  }
+
   const activeDeposits = deposits.filter((d) => !d.redeemedAt);
   const totalDeposited = activeDeposits.reduce((s, d) => s + d.deposited, 0);
   const totalAccruedUsdc = deposits.reduce((d, dep) => {
@@ -1113,8 +1306,15 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
           <div className="sub">Park idle USDC into Circle USYC on Arc L1 — earn real yield, settled via x402 Nanopayment</div>
         </div>
         {apy !== null && (
-          <div style={{ marginLeft: "auto", padding: "4px 10px", borderRadius: 20, background: "#10B98122", fontSize: 12, fontWeight: 800, color: "#10B981" }}>
-            {apy.toFixed(1)}% APY
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <div style={{ padding: "4px 10px", borderRadius: 20, background: "#10B98122", fontSize: 12, fontWeight: 800, color: "#10B981" }}>
+              {apy.toFixed(1)}% APY
+            </div>
+            {activeDeposits.length > 0 && (
+              <button className="btn btn-sm" style={{ fontSize: 10, padding: "4px 8px" }} onClick={redeemAll}>
+                Redeem all
+              </button>
+            )}
           </div>
         )}
       </div>
