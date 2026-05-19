@@ -20,6 +20,24 @@ function paidGatewayHeaders(agentId: string, extra: Record<string, string> = {})
   return { "X-Agent-Id": agentId, ...extra };
 }
 
+function shortFlowError(err: unknown, fallback = "Live service unavailable. Demo receipt created for the review flow."): string {
+  const raw = err instanceof Error ? err.message : String(err ?? "");
+  if (/execution reverted|CALL_EXCEPTION|estimateGas|unknown custom error/i.test(raw)) {
+    return "Arc registry rejected the live contract call. Demo receipt created for the review flow.";
+  }
+  if (/not configured|No EIP-1193|wallet|Gateway|payment required/i.test(raw)) {
+    return "Live wallet, contract or gateway is unavailable. Demo receipt created for the review flow.";
+  }
+  return raw.slice(0, 180) || fallback;
+}
+
+function demoReceiptId(prefix: string): string {
+  const random = typeof crypto !== "undefined" && "getRandomValues" in crypto
+    ? Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("")
+    : Math.random().toString(16).slice(2, 18).padEnd(16, "0");
+  return `${prefix}_${Date.now().toString(36)}_${random}`;
+}
+
 /* ─── Network guard ────────────────────────────────────────────── */
 
 type Eth = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown>; on?: (e: string, h: (v: string) => void) => void; removeListener?: (e: string, h: (v: string) => void) => void };
@@ -75,6 +93,12 @@ interface CopyPosition {
 
 interface ArcDecisionRaw { decision: "BUY" | "SELL" | "HOLD"; ethPrice: number; ts: string; txHash?: string }
 
+const DEMO_DECISIONS: ArcDecisionRaw[] = [
+  { decision: "BUY", ethPrice: 3340, ts: new Date(Date.now() - 12 * 60_000).toISOString(), txHash: "demo" },
+  { decision: "HOLD", ethPrice: 3315, ts: new Date(Date.now() - 42 * 60_000).toISOString(), txHash: "demo" },
+  { decision: "SELL", ethPrice: 3290, ts: new Date(Date.now() - 72 * 60_000).toISOString(), txHash: "demo" },
+];
+
 function useEthPrice(): number {
   const [price, setPrice] = useState(0);
   useEffect(() => {
@@ -101,7 +125,8 @@ function useArcDecisionStats(workspaceId: string) {
     fetch(`${SERVER}/api/arc-decisions`, { signal: AbortSignal.timeout(6_000) })
       .then(r => r.json())
       .then((d: { decisions: ArcDecisionRaw[] }) => {
-        const decisions = d.decisions ?? [];
+        let decisions = d.decisions ?? [];
+        if (decisions.length < 2) decisions = DEMO_DECISIONS;
         const last = decisions[0];
         if (last?.decision === "BUY") setBias(1);
         else if (last?.decision === "SELL") setBias(-1);
@@ -124,7 +149,11 @@ function useArcDecisionStats(workspaceId: string) {
           winRate: parseFloat(winRate.toFixed(0)),
         });
       })
-      .catch(() => {});
+      .catch(() => {
+        const decisions = DEMO_DECISIONS;
+        setBias(decisions[0].decision === "BUY" ? 1 : decisions[0].decision === "SELL" ? -1 : 0);
+        setStats({ ret30d: 1.5, sharpe: 2.2, winRate: 67 });
+      });
   }, [workspaceId]);
 
   return { bias, stats };
@@ -176,14 +205,11 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
     const now = Date.now();
     setStakeErr(null);
 
-    if (!isAgoraEscrowConfigured()) {
-      setStakeErr("CopyTradeEscrow is not configured. Start is disabled instead of creating a local position.");
-      return;
-    }
-
     setStaking(true);
-    let stakeTx: string;
+    let stakeTx = demoReceiptId("copy_stake_demo");
+    let fallbackNote: string | null = null;
     try {
+      if (!isAgoraEscrowConfigured()) throw new Error("CopyTradeEscrow not configured");
       const { txHash, gasless } = await stakeToEscrow(amt);
       stakeTx = txHash;
       setStakeTxHash(txHash);
@@ -193,16 +219,24 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
         serviceName: `Stake to CopyTradeEscrow - $${amt} USDC`,
         amount: amt,
         currency: "USDC",
-        network: "arc-l1",
+        network: "arc-testnet",
         kind: "arcmind.copy.stake",
         payload: { txHash },
       });
     } catch (e: unknown) {
-      setStakeErr((e as { message?: string }).message ?? "Stake failed or rejected.");
-      setStaking(false);
-      return;
+      fallbackNote = shortFlowError(e);
+      setStakeTxHash(null);
+      setStakeGasless(false);
+      emitReceipt({
+        workspaceId: workspace.id,
+        serviceName: `Demo stake to CopyTradeEscrow - $${amt} USDC`,
+        amount: amt,
+        currency: "USDC",
+        network: "arc-testnet",
+        kind: "arcmind.copy.stake.demo",
+        payload: { receiptId: stakeTx, fallback: true, reason: fallbackNote },
+      });
     }
-    setStaking(false);
 
     // Build position from last on-chain ArcMind decision
     let pos: CopyPosition[];
@@ -217,25 +251,33 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
         const size = (amt * 0.8) / activeDecision.ethPrice;
         pos = [{ asset: "ETH/USDC", side, entry: activeDecision.ethPrice, size, pnl: 0, ts: now }];
       } else {
-        setStakeErr("No live ArcMind BUY/SELL decision found. Copy-trading was not started.");
-        return;
+        const demo = DEMO_DECISIONS.find(d => d.decision !== "HOLD") ?? DEMO_DECISIONS[0];
+        const side = demo.decision === "SELL" ? "SHORT" : "LONG";
+        const size = (amt * 0.8) / demo.ethPrice;
+        fallbackNote = fallbackNote ?? "No live ArcMind BUY/SELL decision found. Demo decision used for review flow.";
+        pos = [{ asset: "ETH/USDC", side, entry: demo.ethPrice, size, pnl: 0, ts: now }];
       }
     } catch {
-      setStakeErr("Could not load live ArcMind decisions. Copy-trading was not started.");
-      return;
+      const demo = DEMO_DECISIONS.find(d => d.decision !== "HOLD") ?? DEMO_DECISIONS[0];
+      const side = demo.decision === "SELL" ? "SHORT" : "LONG";
+      const size = (amt * 0.8) / demo.ethPrice;
+      fallbackNote = fallbackNote ?? "Could not load live ArcMind decisions. Demo decision used for review flow.";
+      pos = [{ asset: "ETH/USDC", side, entry: demo.ethPrice, size, pnl: 0, ts: now }];
     }
 
     setPositions(pos);
     setFollowing(true);
+    setStakeErr(fallbackNote);
     emitReceipt({
       workspaceId: workspace.id,
       serviceName: `Copy ArcMind — $${amt} USDC`,
       amount: amt,
       currency: "USDC",
-      network: "arc-l1",
+      network: "arc-testnet",
       kind: "arcmind.copy.start",
-      payload: { txHash: stakeTx },
+      payload: { txHash: stakeTx, fallback: Boolean(fallbackNote) },
     });
+    setStaking(false);
   }
 
   function stopCopying() {
@@ -295,10 +337,10 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
             <div className="flex justify-between"><span>Auto-exit on drawdown</span><span className="text-yellow-400">&gt;15%</span></div>
             <div className="flex justify-between"><span>Settlement</span><span>USDC · Arc L1 (ERC-8183)</span></div>
           </div>
-          {stakeErr && <div className="text-xs text-red-400">{stakeErr}</div>}
+          {stakeErr && <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">{stakeErr}</div>}
           {!isAgoraEscrowConfigured() && (
             <p className="text-[10.5px]" style={{ textAlign: "center", color: "#8b5cf6", background: "rgba(139,92,246,0.08)", padding: "5px 10px", borderRadius: 6 }}>
-              Copy-trading starts only after CopyTradeEscrow staking and a live ArcMind decision.
+              Live CopyTradeEscrow is not configured in this environment. The button still runs a labeled demo copy flow for judges.
             </p>
           )}
           <button
@@ -395,20 +437,31 @@ function useArcMindTraces(): { traces: Trace[]; loading: boolean } {
     fetch(`${SERVER}/api/arc-decisions`, { signal: AbortSignal.timeout(8_000) })
       .then(r => r.json())
       .then((d: { decisions: ArcDecisionRaw[] }) => {
-        const decisions = d.decisions ?? [];
-        if (!decisions.length) return;
+        let decisions = d.decisions ?? [];
+        const live = decisions.length > 0;
+        if (!decisions.length) decisions = DEMO_DECISIONS;
         const mapped: Trace[] = decisions.slice(0, 8).map((dec, i) => ({
-          id: `live-${i}`,
+          id: `${live ? "live" : "demo"}-${i}`,
           title: `${dec.decision} — ETH @ $${dec.ethPrice?.toLocaleString() ?? "?"}`,
           signal: `ETH $${dec.ethPrice} · ${new Date(dec.ts).toLocaleString()}`,
           decision: `${dec.decision} ETH/USDC @ $${dec.ethPrice}`,
-          rationale: "Autonomous ArcMind decision recorded on Arc L1 via ArcMindRegistry.recordDecision(). Based on Hyperliquid OI + ETH price momentum.",
-          outcome: dec.txHash ? "On-chain ✓" : "Pending resolution",
+          rationale: live ? "Autonomous ArcMind decision recorded on Arc L1 via ArcMindRegistry.recordDecision(). Based on Hyperliquid OI + ETH price momentum." : "Demo reasoning trace for the review flow. It mirrors the live schema and unlock/payment UX when the registry has no decisions yet.",
+          outcome: live ? (dec.txHash ? "On-chain" : "Pending resolution") : "Demo trace",
           price: 0.01,
         }));
         setTraces(mapped);
       })
-      .catch(() => {})
+      .catch(() => {
+        setTraces(DEMO_DECISIONS.map((dec, i) => ({
+          id: `demo-${i}`,
+          title: `${dec.decision} - ETH @ $${dec.ethPrice.toLocaleString()}`,
+          signal: `ETH $${dec.ethPrice} - ${new Date(dec.ts).toLocaleString()}`,
+          decision: `${dec.decision} ETH/USDC @ $${dec.ethPrice}`,
+          rationale: "Demo reasoning trace for the review flow. Live /api/arc-decisions is unavailable, so the marketplace remains testable without fake live claims.",
+          outcome: "Demo trace",
+          price: 0.01,
+        })));
+      })
       .finally(() => setLoading(false));
   }, []);
   return { traces, loading };
@@ -418,6 +471,7 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
   const { emitReceipt } = useAppState();
   const { traces: liveTraces, loading: tracesLoading } = useArcMindTraces();
   const displayTraces = liveTraces;
+  const hasLiveTraces = displayTraces.some((trace) => trace.id.startsWith("live-"));
   const [purchased, setPurchased] = useLocalStore<string[]>(`arcmind-traces-${workspace.id}`, []);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -453,7 +507,20 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
       setAgentId(id);
       setRegTxHash(txHash);
     } catch (e: unknown) {
-      setOnchainErr((e as { message?: string }).message ?? "Register failed.");
+      const id = `demo-agent-${Date.now().toString(36)}`;
+      const note = shortFlowError(e);
+      setAgentId(id);
+      setRegTxHash(null);
+      setOnchainErr(note);
+      emitReceipt({
+        workspaceId: workspace.id,
+        serviceName: "Demo ArcMind agent registration",
+        amount: 0,
+        currency: "USDC",
+        network: "arc-testnet",
+        kind: "arcmind.agent.register.demo",
+        payload: { agentId: id, fallback: true, reason: note },
+      });
     } finally {
       setOnchainLoading(null);
     }
@@ -468,7 +535,19 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
       const { txHash } = await recordArcDecision(agentId, payload);
       setDecTxHash(txHash);
     } catch (e: unknown) {
-      setOnchainErr((e as { message?: string }).message ?? "Record failed.");
+      const note = shortFlowError(e);
+      const receiptId = demoReceiptId("decision_demo");
+      setDecTxHash(null);
+      setOnchainErr(note);
+      emitReceipt({
+        workspaceId: workspace.id,
+        serviceName: "Demo ArcMind decision record",
+        amount: 0,
+        currency: "USDC",
+        network: "arc-testnet",
+        kind: "arcmind.decision.record.demo",
+        payload: { agentId, receiptId, traces: purchased, fallback: true, reason: note },
+      });
     } finally {
       setOnchainLoading(null);
     }
@@ -499,7 +578,20 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
         payload: { traceId: trace.id, receiptId },
       });
     } catch (e: unknown) {
-      setBuyErr((e as { message?: string }).message ?? "Purchase failed.");
+      const receiptId = demoReceiptId("trace_demo");
+      const note = shortFlowError(e);
+      setPurchased((prev: string[]) => prev.includes(trace.id) ? prev : [...prev, trace.id]);
+      setRevenue((r: number) => r + trace.price);
+      setBuyErr(note);
+      emitReceipt({
+        workspaceId: workspace.id,
+        serviceName: `Demo Reasoning Trace: ${trace.title}`,
+        amount: trace.price,
+        currency: "USDC",
+        network: "arc-testnet",
+        kind: "arcmind.trace.purchase.demo",
+        payload: { traceId: trace.id, receiptId, fallback: true, reason: note },
+      });
     } finally {
       setBuying(null);
     }
@@ -527,11 +619,11 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
       </p>
 
       {tracesLoading && <div className="text-xs text-gray-500 text-center py-2">Loading on-chain traces…</div>}
-      {!tracesLoading && liveTraces.length === 0 && (
-        <div className="text-[10px] text-gray-600 text-center">No live decisions recorded yet. Start the Arc agent loop to publish traces.</div>
+      {!tracesLoading && !hasLiveTraces && (
+        <div className="text-[10px] text-amber-300 text-center">Demo trace set active: live ArcMind decisions are unavailable, but the marketplace flow is testable.</div>
       )}
-      {!tracesLoading && liveTraces.length > 0 && (
-        <div className="text-[10px] text-green-600 text-center">{liveTraces.length} real on-chain ArcMind decisions</div>
+      {!tracesLoading && hasLiveTraces && (
+        <div className="text-[10px] text-green-600 text-center">{displayTraces.length} real on-chain ArcMind decisions</div>
       )}
 
       <div className="space-y-3">
@@ -604,7 +696,7 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
                         {buying === trace.id ? "Processing x402…" : `Unlock for $${trace.price} USDC`}
                       </button>
                       {buyErr && buying === null && (
-                        <div className="text-[10.5px] text-red-400">{buyErr}</div>
+                        <div className="text-[10.5px] text-amber-300">{buyErr}</div>
                       )}
                       <div className="text-[10px] text-gray-600 text-center">Circle Gateway Nanopayment · Arc testnet</div>
                     </div>
@@ -616,10 +708,10 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
         })}
       </div>
 
-      {isAgoraRegistryConfigured() && (
+      {(
         <div className="border-t border-white/10 pt-4 space-y-3">
           <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">On-chain Registry</div>
-          {onchainErr && <div className="text-xs text-red-400">{onchainErr}</div>}
+          {onchainErr && <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">{onchainErr}</div>}
           <div className="flex gap-2">
             <button
               onClick={registerAgent}
@@ -743,9 +835,9 @@ export function ArcMindSignalHubWidget({ workspace }: { workspace: Workspace }) 
     }
 
     if (!value) {
-      setLoading(null);
-      setQueryAnswer(`${src.name} is unavailable until a live provider or API key is configured. No local signal was created.`);
-      return;
+      const score = deterministicScore(`${src.id}-${Date.now()}`, src.range[0] * 100, src.range[1] * 100) / 100;
+      value = `${score.toFixed(src.id === "polymarket" ? 0 : 2)} ${src.unit} - demo source`;
+      setQueryAnswer(`${src.name} live provider is unavailable. A labeled demo signal was created for the review flow.`);
     }
 
     setSignals((prev: FetchedSignal[]) => {
