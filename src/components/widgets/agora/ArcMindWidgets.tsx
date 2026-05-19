@@ -281,8 +281,25 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
   }
 
   function stopCopying() {
+    const stakeAmount = safeAmt(stake, 10_000) ?? 10;
+    const settlementAmount = Math.max(0, stakeAmount + totalPnl);
     setFollowing(false);
     if (tickRef.current) clearInterval(tickRef.current);
+    setPositions([]);
+    emitReceipt({
+      workspaceId: workspace.id,
+      serviceName: `Copy ArcMind settlement - $${settlementAmount.toFixed(2)} USDC`,
+      amount: settlementAmount,
+      currency: "USDC",
+      network: "arc-testnet",
+      kind: "arcmind.copy.settle",
+      payload: {
+        returnedStake: stakeAmount,
+        pnl: Number(totalPnl.toFixed(6)),
+        receiptId: demoReceiptId("copy_settle"),
+      },
+    });
+    setStakeErr(`Position settled. Returned $${settlementAmount.toFixed(2)} USDC to the user balance in the review flow.`);
   }
 
   return (
@@ -410,7 +427,7 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
             onClick={stopCopying}
             className="w-full rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 text-sm font-semibold py-2.5 transition-colors"
           >
-            Stop &amp; Settle
+            Withdraw &amp; Settle
           </button>
         </div>
       )}

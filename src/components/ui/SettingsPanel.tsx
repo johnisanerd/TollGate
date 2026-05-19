@@ -621,7 +621,7 @@ export function SettingsPanel({ open, onClose, workspace }: SettingsPanelProps) 
                       {workspaceValue.automation ? "Automation enabled" : "Manual approval mode"}
                     </div>
                     <div style={{ marginTop: 8 }}>
-                      <a href="https://dorahacks.io/hackathon/the-bags" target="_blank" rel="noreferrer" style={{ color: "var(--accent-primary, #6366f1)", textDecoration: "none", fontWeight: 800 }}>DoraHacks submission ↗</a>
+                      <a href="https://agora.thecanteenapp.com" target="_blank" rel="noreferrer" style={{ color: "var(--accent-primary, #6366f1)", textDecoration: "none", fontWeight: 800 }}>Agora Agents hackathon ↗</a>
                     </div>
                   </div>
                 </div>

@@ -115,7 +115,7 @@ export function AppLayout() {
           <a href="/live" style={{ color: "#475569", textDecoration: "none" }} target="_blank" rel="noreferrer">ArcMind Live ↗</a>
           <a href="/fleet" style={{ color: "#475569", textDecoration: "none" }}>Fleet View ↗</a>
           <a href="/showcase" style={{ color: "#475569", textDecoration: "none" }}>Receipt Showcase ↗</a>
-          <a href="https://dorahacks.io/hackathon/the-bags" target="_blank" rel="noreferrer" style={{ color: "#475569", textDecoration: "none" }}>Hackathon ↗</a>
+          <a href="https://agora.thecanteenapp.com" target="_blank" rel="noreferrer" style={{ color: "#475569", textDecoration: "none" }}>Hackathon ↗</a>
           <span style={{ marginLeft: "auto", opacity: .5 }}>Built on Arc L1 · Circle x402 · 2026</span>
         </footer>
       </main>

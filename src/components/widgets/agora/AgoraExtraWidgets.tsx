@@ -1034,7 +1034,7 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
 
 // ── USYC Yield ─────────────────────────────────────────────────────────────────
 
-interface YieldReceipt { deposited: number; minted: number; apy: number; hash: string; ts: number }
+interface YieldReceipt { deposited: number; minted: number; apy: number; hash: string; ts: number; redeemedAt?: number; redeemHash?: string }
 
 export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
   const [apy, setApy] = useState<number | null>(null);
@@ -1088,8 +1088,18 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
     setDepositing(false);
   }
 
-  const totalDeposited = deposits.reduce((s, d) => s + d.deposited, 0);
+  function redeem(index: number) {
+    setDeposits(prev => prev.map((dep, i) => {
+      if (i !== index || dep.redeemedAt) return dep;
+      return { ...dep, redeemedAt: Date.now(), redeemHash: demoReceiptId("usyc_redeem").slice(0, 16) };
+    }));
+    setYieldError("USYC redemption queued. Demo redeem receipt created for the review flow.");
+  }
+
+  const activeDeposits = deposits.filter((d) => !d.redeemedAt);
+  const totalDeposited = activeDeposits.reduce((s, d) => s + d.deposited, 0);
   const totalAccruedUsdc = deposits.reduce((d, dep) => {
+    if (dep.redeemedAt) return d;
     const ageYears = (now - dep.ts) / (365.25 * 24 * 3600 * 1000);
     return d + dep.minted * (dep.apy / 100) * ageYears;
   }, 0);
@@ -1140,7 +1150,7 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
       )}
 
       {yieldError && (
-        <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid #ef444433", background: "#ef44440d", color: "#ef4444", fontSize: 11, marginBottom: 12 }}>
+        <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid #f59e0b44", background: "#f59e0b12", color: "#fbbf24", fontSize: 11, marginBottom: 12 }}>
           {yieldError}
         </div>
       )}
@@ -1148,7 +1158,7 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
       {deposits.length > 0 && (
         <div className="svc-table__scroll">
           <table className="svc-table">
-            <thead><tr><th>Deposited</th><th>USYC minted</th><th>APY</th><th>Yield earned</th><th>Receipt</th></tr></thead>
+            <thead><tr><th>Deposited</th><th>USYC minted</th><th>APY</th><th>Yield earned</th><th>Receipt</th><th>Status</th></tr></thead>
             <tbody>
               {deposits.map((d, i) => {
                 const ageYears = (now - d.ts) / (365.25 * 24 * 3600 * 1000);
@@ -1158,8 +1168,15 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
                     <td className="svc-table__num">${d.deposited.toFixed(2)}</td>
                     <td className="svc-table__num">{d.minted.toFixed(4)}</td>
                     <td className="svc-table__num" style={{ color: "#10B981" }}>{d.apy.toFixed(1)}%</td>
-                    <td className="svc-table__num" style={{ color: "#10B981" }}>+${earned.toFixed(6)}</td>
-                    <td style={{ fontSize: 10 }}><code>{d.hash}…</code></td>
+                    <td className="svc-table__num" style={{ color: d.redeemedAt ? "var(--text-secondary)" : "#10B981" }}>+${d.redeemedAt ? "0.000000" : earned.toFixed(6)}</td>
+                    <td style={{ fontSize: 10 }}><code>{d.redeemHash ?? d.hash}...</code></td>
+                    <td className="svc-table__num">
+                      {d.redeemedAt ? (
+                        <span style={{ color: "var(--text-secondary)", fontSize: 10 }}>redeemed</span>
+                      ) : (
+                        <button className="btn btn-sm" style={{ fontSize: 10, padding: "3px 8px" }} onClick={() => redeem(i)}>Redeem</button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}

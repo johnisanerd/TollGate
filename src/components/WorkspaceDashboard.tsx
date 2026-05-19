@@ -601,9 +601,9 @@ export function OverviewPage({
         })}
       </div>
       <div className="act-foot mb">
-        <a href="#" onClick={(e) => e.preventDefault()}>Privacy</a>
-        <a href="#" onClick={(e) => e.preventDefault()}>Terms</a>
-        <a href="#" onClick={(e) => { e.preventDefault(); onGoTab("gateway") || onGoTab("data"); }}>Fees &amp; verification</a>
+        <a href="https://www.circle.com/en/legal/privacy-policy" target="_blank" rel="noreferrer">Privacy</a>
+        <a href="https://www.circle.com/en/legal/usdc-terms" target="_blank" rel="noreferrer">Terms</a>
+        <a href="https://developers.circle.com/cctp" target="_blank" rel="noreferrer">Fees &amp; verification</a>
       </div>
 
       <div className="grid-bento mb">
@@ -3261,10 +3261,10 @@ export function WorkspaceDashboard({
             <CataloguePage agent={effectiveAgent} paidServiceIds={paidServiceIds} services={services} workspace={workspace} tabLabel={activeTab} onOpenPayment={onOpenPayment} onCreateOpen={() => setCreateOpen(true)} />
           )}
           <div className="act-foot" style={{ marginTop: 30 }}>
-            <a href="#" onClick={(e) => e.preventDefault()}><HelpCircle size={14} style={{ verticalAlign: "-2px" }} /> Help</a>
-            <a href="#" onClick={(e) => e.preventDefault()}>Privacy</a>
-            <a href="#" onClick={(e) => e.preventDefault()}>Terms</a>
-            <a href="#" onClick={(e) => e.preventDefault()}>Fees</a>
+            <a href="https://help.circle.com" target="_blank" rel="noreferrer"><HelpCircle size={14} style={{ verticalAlign: "-2px" }} /> Help</a>
+            <a href="https://www.circle.com/en/legal/privacy-policy" target="_blank" rel="noreferrer">Privacy</a>
+            <a href="https://www.circle.com/en/legal/usdc-terms" target="_blank" rel="noreferrer">Terms</a>
+            <a href="https://developers.circle.com/cctp" target="_blank" rel="noreferrer">Fees</a>
           </div>
         </div>
       </main>

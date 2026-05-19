@@ -240,8 +240,13 @@ function ArcContractsPanel({ workspace }: { workspace: Workspace }) {
 function AgoraEcosystemLinks() {
   const groups = [
     { title: "Explorer", items: [{ label: "Arc Testnet Explorer", url: "https://testnet.arcscan.app" }] },
-    { title: "Faucet", items: [{ label: "Arc Testnet Faucet", url: "https://faucet.testnet.arcchain.io" }] },
-    { title: "Dev", items: [{ label: "Arc Docs", url: "https://docs.arcchain.io" }, { label: "Circle CCTP", url: "https://developers.circle.com/stablecoins/cctp-getting-started" }] },
+    { title: "Faucet", items: [{ label: "Circle Faucet", url: "https://faucet.circle.com" }] },
+    { title: "Dev", items: [
+      { label: "Arc Docs", url: "https://docs.arc.io" },
+      { label: "Arc Node Docs", url: "https://arc-node.thecanteenapp.com" },
+      { label: "Circle CCTP", url: "https://developers.circle.com/cctp" },
+    ] },
+    { title: "Hackathon", items: [{ label: "Agora Agents", url: "https://agora.thecanteenapp.com" }] },
   ];
   return <EcosystemLinksPanel groups={groups} network="Arc Testnet · chainId 5042002" accent="#F59E0B" />;
 }
