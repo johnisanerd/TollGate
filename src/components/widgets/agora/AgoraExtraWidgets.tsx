@@ -14,8 +14,31 @@ function paidGatewayHeaders(agentId: string, extra: Record<string, string> = {})
   return { "X-Agent-Id": agentId, ...extra };
 }
 
-function demoReceiptId(prefix: string): string {
+function localReceiptId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 12)}`;
+}
+
+function FlowExplainer({ items }: { items: { label: string; value: string; tone?: "safe" | "warn" }[] }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(155px,1fr))", gap: 8, marginBottom: 14 }}>
+      {items.map((item) => (
+        <div
+          key={item.label}
+          style={{
+            padding: "9px 11px",
+            borderRadius: 10,
+            background: "rgba(255,255,255,0.04)",
+            border: `1px solid ${item.tone === "warn" ? "rgba(245,158,11,0.28)" : "rgba(255,255,255,0.08)"}`,
+          }}
+        >
+          <div style={{ fontSize: 10, color: item.tone === "warn" ? "#fbbf24" : "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 800 }}>
+            {item.label}
+          </div>
+          <div style={{ marginTop: 4, fontSize: 11.5, color: "#dbeafe", lineHeight: 1.45 }}>{item.value}</div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // ── Adaptive Portfolio Manager ──────────────────────────────────────────────────
@@ -57,7 +80,7 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
     let fallbackNote: string | null = null;
     try { ({ eth: liveEth } = await fetchLivePrices()); } catch {
       liveEth = holdings.find((h) => h.symbol === "ETH")?.price || 3340;
-      fallbackNote = "Live price feed unavailable. Using a labeled review snapshot.";
+      fallbackNote = "Live price feed unavailable. Using the last local price snapshot and marking the rebalance as fallback.";
     }
 
     setPhase("Calling Portfolio Rebalance API via x402…");
@@ -74,8 +97,8 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
     } catch { /* handled below */ }
 
     if (!rebalanceReceiptId) {
-      rebalanceReceiptId = demoReceiptId("portfolio_demo");
-      fallbackNote = fallbackNote ?? "Portfolio API unavailable. Demo rebalance receipt created for the review flow.";
+      rebalanceReceiptId = localReceiptId("portfolio_local");
+      fallbackNote = fallbackNote ?? "Portfolio API unavailable. Local rebalance receipt created; no live settlement claim was made.";
     }
 
     const currentEth = holdings.find((h) => h.symbol === "ETH")?.price || liveEth;
@@ -131,7 +154,7 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
       from: "ETH",
       to: "USDC",
       amount: +ethValue.toFixed(2),
-      hash: demoReceiptId("portfolio_riskoff").slice(0, 14),
+      hash: localReceiptId("portfolio_riskoff").slice(0, 14),
       ts: new Date().toLocaleTimeString(),
       kind: "risk-off" as const,
     }, ...prev].slice(0, 20));
@@ -144,7 +167,7 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
       from: "USDC",
       to: "Model target",
       amount: +total.toFixed(2),
-      hash: demoReceiptId("portfolio_restore").slice(0, 14),
+      hash: localReceiptId("portfolio_restore").slice(0, 14),
       ts: new Date().toLocaleTimeString(),
       kind: "restore" as const,
     }, ...prev].slice(0, 20));
@@ -172,6 +195,15 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
           </button>
         </div>
       </div>
+
+      <FlowExplainer
+        items={[
+          { label: "User goal", value: "Keep copy capital in a transparent USDC/ETH allocation instead of blindly following every signal." },
+          { label: "Source", value: "Uses /api/signals ETH price when available; local price snapshots are marked as fallback." },
+          { label: "Funds", value: "Rebalance updates the allocation plan; live movement needs configured x402/CCTP routes.", tone: "warn" },
+          { label: "Exit", value: "Risk-off moves the full model position back to USDC; Restore target reopens the model allocation." },
+        ]}
+      />
 
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", marginBottom: 10 }}>
@@ -236,7 +268,7 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
 
 // ── Circle Developer Tools ──────────────────────────────────────────────────────
 
-const CIRCLE_DEMOS = [
+const CIRCLE_TOOLS = [
   {
     tool: "USDC",
     icon: CircleDollarSign,
@@ -316,8 +348,8 @@ export function AgoraCircleToolsWidget({ workspace: _ }: { workspace: Workspace 
         setStates(prev => ({ ...prev, [tool]: "settled" }));
       }
     } catch {
-      const rcpt = demoReceiptId("circle_demo").slice(0, 10);
-      setResults(prev => ({ ...prev, [tool]: `Demo receipt ${rcpt}... created; live gateway unavailable in this environment.` }));
+      const rcpt = localReceiptId("circle_local").slice(0, 10);
+      setResults(prev => ({ ...prev, [tool]: `Local fallback receipt ${rcpt}... created; live gateway unavailable in this environment; no live settlement claim was made.` }));
       setStates(prev => ({ ...prev, [tool]: tool === "Nanopayments" || tool === "Prog. Wallets" ? "active" : "settled" }));
     }
     setLoading(null);
@@ -347,8 +379,16 @@ export function AgoraCircleToolsWidget({ workspace: _ }: { workspace: Workspace 
           <div className="sub">5 Circle tools integrated — USDC · CCTP · Programmable Wallets · Nanopayments · Paymaster</div>
         </div>
       </div>
+      <FlowExplainer
+        items={[
+          { label: "Role", value: "Shows the exact Circle primitive behind each paid action instead of hiding it behind a generic endpoint." },
+          { label: "Active state", value: "Streams and wallet policies can be stopped or revoked; settled actions remain as audit records." },
+          { label: "Fallback", value: "If a gateway is unavailable, the receipt is local-only and explicitly says no live settlement happened.", tone: "warn" },
+          { label: "Why users care", value: "They can see what costs money, what is reversible, and which tool moved or protected funds." },
+        ]}
+      />
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
-        {CIRCLE_DEMOS.map(({ tool, icon: Icon, color, desc, action }) => (
+        {CIRCLE_TOOLS.map(({ tool, icon: Icon, color, desc, action }) => (
           <div key={tool} style={{ padding: "12px 14px", borderRadius: 10, border: `1.5px solid ${color}22`, background: "var(--card-bg)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ width: 32, height: 32, borderRadius: 8, background: `${color}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -604,8 +644,8 @@ export function AgoraCctpWidget({ workspace: _ }: { workspace: Workspace }) {
       if (!res.ok || !data.receiptId) throw new Error("Gateway did not return a verified receipt");
       setResult({ hash: data.receiptId.slice(0, 20), time: Date.now() - start });
     } catch {
-      setResult({ hash: demoReceiptId("cctp_demo"), time: Date.now() - start });
-      setError("CCTP gateway unavailable. Demo transfer receipt created for the review flow.");
+      setResult({ hash: localReceiptId("cctp_local"), time: Date.now() - start });
+      setError("CCTP gateway unavailable. Local transfer receipt created; no live bridge claim was made.");
     }
     setRunning(false);
   }
@@ -625,6 +665,14 @@ export function AgoraCctpWidget({ workspace: _ }: { workspace: Workspace }) {
         <span className="sq soft" style={{ color: "#4B7BFF" }}><Globe size={15} /></span>
         <div><h3>Circle CCTP Cross-Chain Transfer</h3><div className="sub">Sub-500ms USDC bridging — zero liquidity fragmentation, 0% bridge fee</div></div>
       </div>
+      <FlowExplainer
+        items={[
+          { label: "Why", value: "Move USDC between Arc and external venues before/after arbitrage or portfolio rebalancing." },
+          { label: "Route", value: "Source chain burns/locks USDC and CCTP attests the destination mint path when live." },
+          { label: "Safety", value: "If gateway is missing, the app records only a local fallback receipt and does not claim funds moved.", tone: "warn" },
+          { label: "Exit", value: "Bridge back flips the route so the user can return USDC to the source chain." },
+        ]}
+      />
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto", gap: 8, alignItems: "center", marginBottom: 12 }}>
         <div>
           <div style={{ fontSize: 10, color: "var(--text-secondary)", marginBottom: 4 }}>From</div>
@@ -758,9 +806,9 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
       if (!res.ok || !data.receiptId) throw new Error("Gateway did not return a verified receipt");
       setBridgeResult(data.receiptId);
     } catch {
-      const receiptId = demoReceiptId("bridge_demo");
+      const receiptId = localReceiptId("bridge_local");
       setBridgeResult(receiptId);
-      setAppKitError("Bridge gateway unavailable. Demo CCTP receipt created for the review flow.");
+      setAppKitError("Bridge gateway unavailable. Local CCTP receipt created; no live bridge claim was made.");
     }
     setBridging(false);
   }
@@ -780,7 +828,7 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
         price,
         amountOut: swapSide === "BUY" ? amount / price : amount * price,
       });
-      setAppKitError("Live ETH quote unavailable. Demo quote created for the review flow.");
+      setAppKitError("Live ETH quote unavailable. Local quote marked fallback; it is not a live price.");
     }
   }
 
@@ -798,9 +846,9 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
       if (!res.ok || !data.receiptId) throw new Error("Gateway did not return a verified receipt");
       setSwapDone(data.receiptId);
     } catch {
-      const receiptId = demoReceiptId("swap_demo");
+      const receiptId = localReceiptId("swap_local");
       setSwapDone(receiptId);
-      setAppKitError("Swap gateway unavailable. Demo swap receipt created for the review flow.");
+      setAppKitError("Swap gateway unavailable. Local swap receipt created; no live execution claim was made.");
     }
     setSwapping(false);
   }
@@ -819,9 +867,9 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
       if (!res.ok || !data.receiptId) throw new Error("Gateway did not return a verified receipt");
       setSendDone(data.receiptId);
     } catch {
-      const receiptId = demoReceiptId("send_demo");
+      const receiptId = localReceiptId("send_local");
       setSendDone(receiptId);
-      setAppKitError("Send gateway unavailable. Demo send receipt created for the review flow.");
+      setAppKitError("Send gateway unavailable. Local send receipt created; no live transfer claim was made.");
     }
     setSending(false);
   }
@@ -853,6 +901,15 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
           AppKit
         </div>
       </div>
+
+      <FlowExplainer
+        items={[
+          { label: "Purpose", value: "A single wallet console for the flows this product actually needs: balance, bridge, swap and send." },
+          { label: "Source", value: "Balance reads Arc JSON-RPC; bridge/swap/send call configured backend gateways when available." },
+          { label: "Funds", value: "Bridge and send are irreversible once live settlement is configured; fallback receipts are marked local.", tone: "warn" },
+          { label: "Undo path", value: "Bridge back and reverse swap prepare the opposite route, but require a fresh quote before execution." },
+        ]}
+      />
 
       {/* Tab bar */}
       <div style={{ display: "flex", gap: 4, marginBottom: 16, padding: 4, background: "var(--card-bg)", borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
@@ -1055,7 +1112,7 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
         price,
         slippagePct: 0.18,
       });
-      setSwapError("Live ETH quote unavailable. Demo quote created for the review flow.");
+      setSwapError("Live ETH quote unavailable. Local quote marked fallback; it is not a live price.");
     }
     setQuoting(false);
   }
@@ -1077,12 +1134,12 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
         price: quote.price, hash, ts: new Date().toLocaleTimeString(), status: "open" as const,
       }, ...prev].slice(0, 20));
     } catch {
-      const hash = demoReceiptId("swap_demo").slice(0, 16);
+      const hash = localReceiptId("swap_local").slice(0, 16);
       setSwaps(prev => [{
-        svc: "Arc DEX demo", side, amountIn: quote.amountIn, amountOut: quote.amountOut,
+        svc: "Arc DEX local fallback", side, amountIn: quote.amountIn, amountOut: quote.amountOut,
         price: quote.price, hash, ts: new Date().toLocaleTimeString(), status: "open" as const,
       }, ...prev].slice(0, 20));
-      setSwapError("Swap gateway unavailable. Demo swap receipt created for the review flow.");
+      setSwapError("Swap gateway unavailable. Local swap receipt created; no live execution claim was made.");
     }
     setExecuting(false);
   }
@@ -1101,13 +1158,13 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
         amountIn: latest.amountOut,
         amountOut: latest.amountIn,
         price: latest.price,
-        hash: demoReceiptId("swap_reverse").slice(0, 16),
+        hash: localReceiptId("swap_reverse").slice(0, 16),
         ts: new Date().toLocaleTimeString(),
         status: "reversed" as const,
       },
       ...prev.map((s) => s.hash === latest.hash ? { ...s, status: "closed" as const } : s),
     ].slice(0, 20));
-    setSwapError("Latest open swap reversed in the review flow. Fetch a new quote for the next trade.");
+    setSwapError("Latest open swap reversed in local history. Fetch a new quote for the next trade.");
   }
 
   const totalVol = swaps.reduce((s, r) => s + r.amountIn, 0);
@@ -1136,6 +1193,15 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
           </div>
         )}
       </div>
+
+      <FlowExplainer
+        items={[
+          { label: "Use case", value: "Convert copy-strategy exposure between USDC and ETH after Decision Guard produces an action." },
+          { label: "Price source", value: "Live quote comes from /api/eth-quote; unavailable quotes are explicitly marked as fallback." },
+          { label: "Execution", value: "Live swap needs the configured gateway; local receipts do not claim a real DEX fill.", tone: "warn" },
+          { label: "Recovery", value: "Reverse latest creates an opposite local route and closes the previous open swap in history." },
+        ]}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, alignItems: "flex-end", marginBottom: 12 }}>
         <div>
@@ -1238,7 +1304,7 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
       .then((d: { apy?: number }) => setApy(typeof d.apy === "number" ? d.apy : null))
       .catch(() => {
         setApy(4.8);
-        setYieldError("USYC APY feed unavailable. Demo APY enabled for the review flow.");
+        setYieldError("USYC APY feed unavailable. APY is shown from local fallback configuration, not a live provider.");
       });
   }, []);
 
@@ -1264,10 +1330,10 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
       const minted = parseFloat((amt * (1 - 0.005)).toFixed(4)); // 0.5% mint fee
       setDeposits(prev => [{ deposited: amt, minted, apy: currentApy, hash, ts: Date.now() }, ...prev].slice(0, 10));
     } catch {
-      const hash = demoReceiptId("usyc_demo").slice(0, 16);
+      const hash = localReceiptId("usyc_local").slice(0, 16);
       const minted = parseFloat((amt * (1 - 0.005)).toFixed(4));
       setDeposits(prev => [{ deposited: amt, minted, apy: currentApy, hash, ts: Date.now() }, ...prev].slice(0, 10));
-      setYieldError("USYC gateway unavailable. Demo deposit receipt created for the review flow.");
+      setYieldError("USYC gateway unavailable. Local deposit receipt created; no live USYC mint claim was made.");
     }
     setDepositing(false);
   }
@@ -1275,16 +1341,16 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
   function redeem(index: number) {
     setDeposits(prev => prev.map((dep, i) => {
       if (i !== index || dep.redeemedAt) return dep;
-      return { ...dep, redeemedAt: Date.now(), redeemHash: demoReceiptId("usyc_redeem").slice(0, 16) };
+      return { ...dep, redeemedAt: Date.now(), redeemHash: localReceiptId("usyc_redeem").slice(0, 16) };
     }));
-    setYieldError("USYC redemption queued. Demo redeem receipt created for the review flow.");
+    setYieldError("USYC redemption queued in local state; live redemption requires the configured USYC gateway.");
   }
 
   function redeemAll() {
     setDeposits(prev => prev.map((dep) => dep.redeemedAt ? dep : {
       ...dep,
       redeemedAt: Date.now(),
-      redeemHash: demoReceiptId("usyc_redeem_all").slice(0, 16),
+      redeemHash: localReceiptId("usyc_redeem_all").slice(0, 16),
     }));
     setYieldError("All active USYC positions queued for redemption.");
   }
@@ -1318,6 +1384,15 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
           </div>
         )}
       </div>
+
+      <FlowExplainer
+        items={[
+          { label: "Why", value: "Risk-off parking for idle USDC when Decision Guard says market exposure is unsafe." },
+          { label: "Destination", value: "USDC mints USYC when the gateway is live; local fallback deposits are marked and do not claim live mint." },
+          { label: "Exit", value: "Redeem one deposit or redeem all to move the position back toward USDC state." },
+          { label: "Safety", value: "Amount, APY source, mint fee, receipt and redemption status stay visible per deposit." },
+        ]}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
         {[

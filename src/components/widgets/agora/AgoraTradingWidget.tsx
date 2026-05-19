@@ -1,5 +1,5 @@
 /**
- * AgoraTradingWidget — Cross-Platform Arbitrage Agent for Arc L1 / Circle.
+ * AgoraTradingWidget — Cross-Platform Agent Engine for Arc L1 / Circle.
  *
  * 6-step autonomous flow:
  *   1. Agent discovers price gap via Arc Price Oracle (x402 $0.02) — real gateway
@@ -61,7 +61,7 @@ const lbl: CSSProperties = {
 
 function sleep(ms: number) { return new Promise<void>((r) => setTimeout(r, ms)); }
 
-function demoReceiptId(prefix: string): string {
+function localReceiptId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 12)}`;
 }
 
@@ -145,9 +145,9 @@ export function AgoraTradingWidget() {
         }
       } catch { /* oracle unreachable */ }
       if (gap === null) {
-        oracleReceiptId = demoReceiptId("oracle_demo");
+        oracleReceiptId = localReceiptId("oracle_local");
         gap = 0.018;
-        addLog("Oracle fallback: live price feed unavailable, using review snapshot with explicit demo receipt.");
+        addLog("Oracle fallback: live price feed unavailable; using local price snapshot and marking the receipt as fallback.");
       }
       const arcPrice = 1.0001;
       const basePrice = parseFloat((arcPrice - gap).toFixed(4));
@@ -188,8 +188,8 @@ export function AgoraTradingWidget() {
         }
       } catch { /* handled below */ }
       if (!rid) {
-        rid = demoReceiptId("arb_demo");
-        addLog("x402 fallback: gateway unavailable, continuing with a labeled demo receipt for the review flow.");
+        rid = localReceiptId("arb_local");
+        addLog("x402 fallback: gateway unavailable; recording a local fallback receipt without claiming live settlement.");
       }
       setReceiptId(rid);
       setPaid(0.07);
@@ -254,7 +254,7 @@ export function AgoraTradingWidget() {
   return (
     <ActionPanel
       icon={<Coins size={15} />}
-      title="Cross-Platform Arbitrage Agent — Arc L1"
+      title="Cross-Platform Agent Engine — Arc L1"
       sub={<>ArcArb Agent discovers price gaps, pays via x402, executes <strong>CCTP cross-chain swap</strong> — zero human clicks. Agora Agents Hackathon · <strong>Circle tools</strong>.</>}
     >
       {/* Agent budget strip */}
@@ -267,6 +267,20 @@ export function AgoraTradingWidget() {
           <div key={g.label} style={{ background: "var(--bg-2)", borderRadius: 9, padding: "8px 10px" }}>
             <div style={lbl}>{g.label}</div>
             <div style={{ fontWeight: 700, fontSize: ".82rem", marginTop: 2 }}>{g.val}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8, marginBottom: 14 }}>
+        {[
+          { label: "Source", value: "Arc Oracle provides the price gap; if it is unavailable, the run is marked local fallback." },
+          { label: "Funds", value: "Uses the agent daily budget, not copy-trading stake. Budget check blocks overspend before x402 payment." },
+          { label: "Route", value: "Arc USDC payment -> CCTP bridge -> Base execution -> profit receipt." },
+          { label: "Safety", value: "Cancel stops the running sequence; Reset clears only this visible run state." },
+        ].map((item) => (
+          <div key={item.label} style={{ padding: "9px 11px", borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ ...lbl, color: item.label === "Safety" ? "#fbbf24" : "var(--muted)" }}>{item.label}</div>
+            <div style={{ marginTop: 4, fontSize: ".7rem", lineHeight: 1.45, color: "#dbeafe" }}>{item.value}</div>
           </div>
         ))}
       </div>

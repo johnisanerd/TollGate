@@ -33,7 +33,7 @@ ArcMind is an autonomous trading agent that publishes its reasoning step by step
 | `svc_arc_oracle` | Arc Price Oracle | $0.02 | Real-time USDC price across Arc, Arbitrum, Base — spots cross-chain gaps |
 | `svc_arc_arb` | Cross-Chain Arb Executor | $0.05 | Executes USDC arbitrage via CCTP; monitors finality, returns net profit |
 | `svc_arc_portfolio` | Portfolio Rebalance API | $0.08 | Multi-asset rebalance instructions settled via Circle Paymaster |
-| `svc_arc_signal_hl` | Hyperliquid OI Feed | $0.002 | Open interest delta + funding rate from Hyperliquid perps |
+| `svc_arc_signal_hl` | Hyperliquid OI Feed | $0.01 | Open interest delta + funding rate from Hyperliquid perps |
 | `svc_arc_signal_poly` | Polymarket Sentiment Feed | $0.001 | YES probability for top macro events on Polymarket |
 | `svc_arc_signal_news` | News Sentiment Oracle | $0.005 | Aggregated sentiment from 200+ crypto news sources |
 | `svc_arc_signal_whale` | On-Chain Whale Tracker | $0.003 | Net wallet flows >$100k across Arc, Base, and Arbitrum |
@@ -43,10 +43,10 @@ ArcMind is an autonomous trading agent that publishes its reasoning step by step
 ## UI tabs
 
 1. **Overview** — ArcMind performance summary, live arb feed, kill switch status
-2. **Arbitrage Agent** — live cross-chain price oracle + CCTP arb executor panel
-3. **Copy Trading** — stake USDC into `CopyTradeEscrow.sol`, view PnL + kill threshold
-4. **Reasoning Traces** — buy ArcMind decision trace via x402; view signal, sizing, outcome
-5. **Signal Hub** — 4 live data feeds: Hyperliquid OI, Polymarket, news sentiment, whale tracker
+2. **Agent Engine** — live cross-chain price oracle + CCTP arb executor panel
+3. **Copy Strategy** — stake USDC into `CopyTradeEscrow.sol`, view PnL + kill threshold
+4. **Reasoning Proofs** — buy ArcMind decision trace via x402; view signal, sizing, outcome
+5. **Decision Guard** — 4 live data feeds: Hyperliquid OI, Polymarket, news sentiment, whale tracker
 6. **Portfolio Manager** — multi-asset rebalancer: target weights → rebalance calldata via Paymaster
 7. **Circle Tools** — CCTP cross-chain USDC transfer builder + status tracker
 8. **Receipts** — full payment history with Arc explorer links

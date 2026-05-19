@@ -11,9 +11,9 @@ export const workspace: Workspace = {
   name: "ArcMind — Autonomous Trading Intelligence",
   route: "/agora",
   pitch: "ArcMind: the first autonomous trading agent that shows you its reasoning, lets you copy-trade with $1, and kills itself when it starts losing — all settled in USDC on Arc L1.",
-  tags: ["Cross-Chain Arb", "Copy Trading", "Reasoning Traces", "Signal Hub", "Kill Switch"],
+  tags: ["Cross-Chain Arb", "Copy Strategy", "Reasoning Proofs", "Decision Guard", "Kill Switch"],
   networks: ["arc-testnet"],
-  tabs: ["Overview", "Signal Hub", "Reasoning Traces", "Copy Trading", "Kill Switch", "USYC Yield & Swap", "App Kit", "Arbitrage Agent", "Portfolio Manager", "Receipts"],
+  tabs: ["Overview", "Decision Guard", "Reasoning Proofs", "Copy Strategy", "Kill Switch", "Risk-Off Vault", "App Kit", "Agent Engine", "Portfolio Manager", "Receipts"],
   accent: "#1652F0",
   darkAccent: "#4B7BFF",
   Icon: CircleLogo,
@@ -55,7 +55,7 @@ export const rawServices: SRaw[] = [
   { id: "svc_arc_copytrade", workspaceId: "agora", name: "Copy ArcMind — ERC-8183 Escrow", category: "trading",
     description: "Open a copy-trade position under ArcMind. Stake USDC into CopyTradeEscrow.sol; agent allocates and settles PnL automatically.",
     priceUsd: 1.00, currency: "USDC", network: "arc-testnet", provider: "ArcMind Escrow", providerWallet: W2,
-    sampleIn: '{ "stake": "10.00", "trader": "0x…" }', response: '{ "positionId": "pos_…", "escrow": "0xArcMindEscrow", "killThreshold": "15%", "performanceFee": "5%" }', status: "active", calls: 0 },
+    sampleIn: '{ "stake": "10.00", "strategy": "ArcMind ETH/USDC", "source": "/api/arc-decisions" }', response: '{ "positionId": "pos_…", "escrow": "0xArcMindEscrow", "killThreshold": "15%", "performanceFee": "5%" }', status: "active", calls: 0 },
 ];
 
 export const agentRaw: AgentRaw = {

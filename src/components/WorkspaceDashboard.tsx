@@ -179,7 +179,7 @@ function ago(iso: string) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-const SERVICE_TAB_KW = ["data", "trading", "arbitrage", "arb", "analysis", "tax", "compute", "storage", "signal", "analytic", "intel", "model", "oracle", "inference", "report", "endpoint", "query", "feed", "checkout"];
+const SERVICE_TAB_KW = ["data", "trading", "arbitrage", "arb", "engine", "analysis", "tax", "compute", "storage", "signal", "analytic", "intel", "model", "oracle", "inference", "report", "endpoint", "query", "feed", "checkout"];
 
 export function pageKind(tab: string, index: number): "overview" | "agents" | "receipts" | "gateway" | "catalogue" | "service" | "verify" {
   const t = tab.toLowerCase();
@@ -503,11 +503,11 @@ export function OverviewPage({
       { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} Sui payments`, onClick: () => onGoReceipts() },
     ],
     agora: [
-      { light: true, ico: TrendingUp, title: "Run cross-chain arb demo", sub: "ETH/USDC gap Arc vs Base · $0.05 · CCTP", metric: "CCTP route", detail: "Arc vs Base", accent: "#22d3ee", onClick: () => onGoTab("arbitrage") || onGoTab("arb") },
+      { light: true, ico: TrendingUp, title: "Run cross-chain arb route", sub: "ETH/USDC gap Arc vs Base · $0.05 · CCTP", metric: "CCTP route", detail: "Arc vs Base", accent: "#22d3ee", onClick: () => onGoTab("arbitrage") || onGoTab("arb") },
       { ico: CircleDollarSign, title: "Adaptive portfolio rebalancer", sub: "multi-asset · USDC settlement · Paymaster", metric: "Risk-off", detail: "USDC/USYC", accent: "#10b981", onClick: () => onGoTab("portfolio") },
-      { ico: Zap, title: "Pay-per-inference on Arc", sub: "x402 → USDC → instant settlement", metric: "$0.002", detail: "priced call", accent: "#f59e0b", onClick: () => def && onOpenPayment(def) },
-      { ico: Robot, title: "ArcArb Agent settings", sub: "daily limit $20 · auto-pay on · CCTP", metric: "Auto-pay", detail: "$20 cap", accent: "#8b5cf6", onClick: () => onGoTab("agent") },
-      { ico: Code, title: "Circle Tools — CCTP & Nanopayments", sub: "CCTP bridge · Gateway · Paymaster", metric: "Circle stack", detail: "4 tools", accent: "#3b82f6", onClick: () => onGoTab("circle") || onGoTab("gateway") },
+      { ico: Zap, title: "Paid reasoning proof unlock", sub: "x402 → USDC → trace receipt", metric: "$0.01", detail: "proof", accent: "#f59e0b", onClick: () => onGoTab("reasoning") },
+      { ico: Robot, title: "Kill Switch safety policy", sub: "drawdown threshold · pause · stop", metric: "Risk cap", detail: "15%", accent: "#8b5cf6", onClick: () => onGoTab("kill") },
+      { ico: Code, title: "App Kit settlement console", sub: "Balance · Bridge · Swap · Send", metric: "Circle stack", detail: "Arc tools", accent: "#3b82f6", onClick: () => onGoTab("app kit") },
       { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} Arc payments`, metric: `${wsReceipts.length}`, detail: "receipts", accent: "#fb7185", onClick: () => onGoReceipts() },
     ],
     polygon: [
@@ -519,19 +519,19 @@ export function OverviewPage({
       { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} Polygon payments`, onClick: () => onGoReceipts() },
     ],
   };
-  // "Try the demo agent" — the one-click 402 → pay → unlock action judges look for.
+  // Primary one-click x402 -> pay -> unlock action for each workspace.
   // Prepended to every workspace's tile set; the per-workspace first card loses its
   // `light` accent so there's a single clear primary CTA.
-  const demoAgentCard: CardDef = {
+  const paidAgentCard: CardDef = {
     light: true,
     ico: Bolt,
-    title: "▶ Try the demo agent",
+    title: "▶ Run paid agent",
     sub: def ? `pays for ${def.name} · 402 → pay → unlock + receipt` : "402 → pay → unlock + receipt",
     link: "x402 Gateway →",
-    metric: workspace.id === "agora" ? "Live demo" : undefined,
+    metric: workspace.id === "agora" ? "Live payment" : undefined,
     detail: workspace.id === "agora" ? "402 receipt" : undefined,
     accent: workspace.id === "agora" ? "#1652F0" : undefined,
-    onLink: () => onGoTab("gateway"),
+    onLink: () => workspace.id === "agora" ? onGoTab("app kit") : onGoTab("gateway"),
     onClick: () => def && onOpenPayment(def),
   };
   const wsCards = (WS_CARDS[workspace.id] ?? [
@@ -541,7 +541,7 @@ export function OverviewPage({
     { ico: Code, title: "x402 Gateway & SDK", sub: "Docs · middleware · adapters", onClick: () => onGoTab("gateway") || onGoTab("data") },
     { ico: Shield, title: "Verify a payment proof", sub: "Replay-safe · single-use", onClick: () => onGoTab("gateway") || onGoTab("data") },
   ]).map((c, i) => (i === 0 ? { ...c, light: false } : c));
-  const cards: CardDef[] = [demoAgentCard, ...wsCards];
+  const cards: CardDef[] = [paidAgentCard, ...wsCards];
   const overviewClass = OVERVIEW_CLASS[workspace.id];
   const overviewAccents = OVERVIEW_ACCENTS[workspace.id];
 
@@ -645,7 +645,7 @@ export function OverviewPage({
           <div className="ttl"><span className="sq soft"><Bolt width={15} height={15} /></span><div><h3>Last paid calls</h3><div className="sub">Live receipts ledger</div></div></div>
           <button className="btn btn-ghost btn-sm" type="button" onClick={onGoReceipts}>View all</button>
         </div>
-        {recent.length === 0 ? <div className="empty">No receipts yet — run the demo.</div> : (
+        {recent.length === 0 ? <div className="empty">No receipts yet — run a paid action.</div> : (
           <div className="log">{recent.slice(0, 4).map((r) => <ReceiptRow key={r.id} r={r} onClick={onGoReceipts} />)}</div>
         )}
       </div>
@@ -879,12 +879,12 @@ function productTabCopy(workspace: Workspace, tabLabel: string, fallbackTitle: s
   };
 
   if (workspace.id === "agora") {
-    if (t.includes("signal") || t.includes("hub")) return { title: "SignalGuard decision cockpit", sub: "Live market sources, debate, PnL and decision logs for HOLD, REDUCE or ALLOW actions on Arc.", intent: "RFB 02 / 03", proof: "sourced signals + Arc receipts" };
+    if (t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard")) return { title: "Decision Guard", sub: "Live market sources, debate, PnL and decision logs for HOLD, REDUCE or ALLOW actions on Arc.", intent: "RFB 02 / 03", proof: "sourced signals + Arc receipts" };
     if (t.includes("reasoning") || t.includes("trace")) return { title: "Reasoning trace marketplace", sub: "Inspect the evidence, confidence shift and source contribution behind each agent decision.", intent: "RFB 06", proof: "trace hash + paid unlock" };
     if (t.includes("copy")) return { title: "Copy trading lifecycle", sub: "Set stake, monitor decay, pause, stop or reduce allocation before blind copy-trading can hurt the user.", intent: "RFB 06", proof: "copy controls + risk rules" };
-    if (t.includes("kill") || t.includes("risk")) return { title: "Autonomous risk kill switch", sub: "Configure drawdown, liquidation and source-divergence protections before the agent keeps trading.", intent: "RFB 01", proof: "Telegram + Arc action trail" };
-    if (t.includes("usyc") || t.includes("yield") || t.includes("swap")) return { title: "Risk-off capital router", sub: "Move idle capital between USDC, USYC and swap routes when the agent detects hostile conditions.", intent: "RFB 04", proof: "USDC denominated settlement" };
-    if (t.includes("arbitrage") || t.includes("arb")) return { title: "Cross-platform arbitrage route", sub: "Detect price gaps, choose route, estimate slippage and show the CCTP/Gateway path before execution.", intent: "RFB 05", proof: "route + receipt" };
+    if (t.includes("kill")) return { title: "Autonomous risk kill switch", sub: "Configure drawdown, liquidation and source-divergence protections before the agent keeps trading.", intent: "RFB 01", proof: "Telegram + Arc action trail" };
+    if (t.includes("usyc") || t.includes("yield") || t.includes("swap") || t.includes("risk-off") || t.includes("vault")) return { title: "Risk-off capital router", sub: "Move idle capital between USDC, USYC and swap routes when the agent detects hostile conditions.", intent: "RFB 04", proof: "USDC denominated settlement" };
+    if (t.includes("arbitrage") || t.includes("arb") || t.includes("engine")) return { title: "Cross-platform arbitrage route", sub: "Detect price gaps, choose route, estimate slippage and show the CCTP/Gateway path before execution.", intent: "RFB 05", proof: "route + receipt" };
     if (t.includes("portfolio")) return { title: "Adaptive portfolio manager", sub: "Detect market regime, rebalance exposure and park capital in risk-off assets when needed.", intent: "RFB 04", proof: "allocation plan" };
     if (t.includes("circle") || t.includes("x402") || t.includes("kit") || t.includes("merchant")) return { title: "Circle and Arc tool console", sub: "Use App Kit, CCTP, Gateway, x402 and nanopayment flows as the product's settlement layer.", intent: "Circle stack", proof: "USDC payments on Arc" };
     if (t.includes("receipt")) return { title: "Arc settlement ledger", sub: "Review paid agent actions and receipts that prove which product flows actually settled.", intent: "Proof layer", proof: "receipt history" };
@@ -2116,7 +2116,7 @@ export function ServiceTabPage({
     (workspace.id === "qie" && (t.includes("merchant") || t.includes("gaming") || t.includes("game") || t.includes("social") || t.includes("creator") || t.includes("wallet") || t.includes("credit") || t.includes("oracle") || t.includes("pass"))) ||
     // 0G: "Receipts" is the API reference tab — excluded so grid shows there
     (workspace.id === "0g" && (t.includes("compute") || t.includes("inference") || t.includes("storage") || t.includes("trading") || t.includes("privacy") || t.includes("sovereign") || t.includes("tee") || t.includes("identity") || t.includes("agent"))) ||
-    (workspace.id === "agora" && (t.includes("arbitrage") || t.includes("arb") || t.includes("portfolio") || t.includes("x402") || t.includes("circle") || t.includes("merchant") || t.includes("receipt") || t.includes("copy") || t.includes("reasoning") || t.includes("trace") || t.includes("signal") || t.includes("hub") || t.includes("kill") || t.includes("risk") || t.includes("usyc") || t.includes("yield") || t.includes("swap") || t.includes("app kit") || t.includes("kit"))) ||
+    (workspace.id === "agora" && (t.includes("arbitrage") || t.includes("arb") || t.includes("engine") || t.includes("portfolio") || t.includes("x402") || t.includes("circle") || t.includes("merchant") || t.includes("receipt") || t.includes("copy") || t.includes("reasoning") || t.includes("trace") || t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard") || t.includes("kill") || t.includes("risk-off") || t.includes("vault") || t.includes("usyc") || t.includes("yield") || t.includes("swap") || t.includes("app kit") || t.includes("kit"))) ||
     (workspace.id === "polygon" && (t.includes("merchant") || t.includes("mode") || t.includes("trade") || t.includes("finance") || t.includes("usdc") || t.includes("payment") || t.includes("remittance") || t.includes("overview") || t.includes("receipt") || t.includes("marketplace") || t.includes("agent")));
 
   const productCopy = productTabCopy(workspace, tabLabel, ttl, sub);
@@ -2164,7 +2164,7 @@ export function ServiceTabPage({
         <ProofVerifier workspace={workspace} />
       )}
 
-      {(t.includes("pass") || (variant === "verify" && !t.includes("rule") && !t.includes("risk") && !t.includes("privacy") && !t.includes("sovereign"))) && (
+      {workspace.id !== "agora" && (t.includes("pass") || (variant === "verify" && !t.includes("rule") && !t.includes("risk") && !t.includes("privacy") && !t.includes("sovereign"))) && (
         <>
           <ProofVerifier workspace={workspace} />
           {workspace.id === "qie" ? <QiePassIssuer workspace={workspace} services={base} />
@@ -2262,7 +2262,7 @@ export function ServiceTabPage({
       {workspace.id === "sui" && t.includes("intent") && <IntentEngineWidget workspace={workspace} />}
       {workspace.id === "sui" && t.includes("receipt") && <AgentNftReputation workspace={workspace} />}
 
-      {workspace.id === "agora" && (t.includes("arbitrage") || t.includes("arb")) && <AgoraTradingWidget />}
+      {workspace.id === "agora" && (t.includes("arbitrage") || t.includes("arb") || t.includes("engine")) && <AgoraTradingWidget />}
       {workspace.id === "agora" && t.includes("portfolio") && <AgoraPortfolioWidget workspace={workspace} />}
       {workspace.id === "agora" && (t.includes("x402") && !t.includes("portfolio")) && <AgoraX402Widget workspace={workspace} />}
       {workspace.id === "agora" && t.includes("circle") && <><AgoraCircleToolsWidget workspace={workspace} /><AgoraCctpWidget workspace={workspace} /></>}
@@ -2285,18 +2285,18 @@ export function ServiceTabPage({
       {workspace.id === "agora" && t.includes("receipt") && <AgoraLeaderboardWidget workspace={workspace} />}
       {workspace.id === "agora" && (t.includes("copy") || t.includes("copy trading")) && <ArcMindCopyTradingWidget workspace={workspace} />}
       {workspace.id === "agora" && (t.includes("reasoning") || t.includes("trace")) && <ArcMindReasoningWidget workspace={workspace} />}
-      {workspace.id === "agora" && (t.includes("signal") || t.includes("hub")) && <ArcMindSignalHubWidget workspace={workspace} />}
-      {workspace.id === "agora" && (t.includes("kill") || t.includes("risk")) && <ArcMindKillSwitchWidget workspace={workspace} />}
-      {workspace.id === "agora" && (t.includes("signal") || t.includes("hub")) && (
+      {workspace.id === "agora" && (t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard")) && <ArcMindSignalHubWidget workspace={workspace} />}
+      {workspace.id === "agora" && t.includes("kill") && <ArcMindKillSwitchWidget workspace={workspace} />}
+      {workspace.id === "agora" && (t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard")) && (
         <div className="widget-card-grid-2">
           <ArcMindPnLWidget />
           <ArcMindDebateWidget />
         </div>
       )}
-      {workspace.id === "agora" && (t.includes("signal") || t.includes("hub")) && <ArcDecisionLogWidget />}
+      {workspace.id === "agora" && (t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard")) && <ArcDecisionLogWidget />}
       {workspace.id === "agora" && (t.includes("app kit") || t.includes("kit")) && <ArcAppKitWidget workspace={workspace} />}
-      {workspace.id === "agora" && (t.includes("usyc") || t.includes("yield") || t.includes("swap")) && <ArcMindYieldWidget workspace={workspace} />}
-      {workspace.id === "agora" && (t.includes("usyc") || t.includes("yield") || t.includes("swap")) && <ArcMindSwapWidget workspace={workspace} />}
+      {workspace.id === "agora" && (t.includes("usyc") || t.includes("yield") || t.includes("swap") || t.includes("risk-off") || t.includes("vault")) && <ArcMindYieldWidget workspace={workspace} />}
+      {workspace.id === "agora" && (t.includes("usyc") || t.includes("yield") || t.includes("swap") || t.includes("risk-off") || t.includes("vault")) && <ArcMindSwapWidget workspace={workspace} />}
 
       {workspace.id === "polygon" && (t.includes("merchant") || t.includes("mode")) && <PolygonMerchantOnboardingWidget workspace={workspace} />}
       {workspace.id === "polygon" && (t.includes("trade") || t.includes("finance")) && <PolygonTradeFinanceWidget workspace={workspace} />}
@@ -2727,7 +2727,7 @@ export function ReceiptsPage({ receipts, workspace, tabLabel }: { receipts: Rece
                 return realTx ? (
                   <div className="kv"><span className="k">Anchor tx</span>{txUrl ? <a className="v" href={txUrl} target="_blank" rel="noreferrer" style={{ color: "#2f6bff", textDecoration: "underline" }}>{realTx.slice(0, 10)}…{realTx.slice(-4)} ↗</a> : <span className="v">{realTx.slice(0, 10)}…{realTx.slice(-4)}</span>}</div>
                 ) : sel.txHash ? (
-                  <div className="kv"><span className="k">Tx hash</span><span className="v" title={sel.txHash} style={{ color: "#9a9a9a", fontWeight: 600 }}>{sel.txHash.length > 20 ? sel.txHash.slice(0, 14) + "…" : sel.txHash} · demo</span></div>
+                  <div className="kv"><span className="k">Tx hash</span><span className="v" title={sel.txHash} style={{ color: "#9a9a9a", fontWeight: 600 }}>{sel.txHash.length > 20 ? sel.txHash.slice(0, 14) + "…" : sel.txHash} · fallback</span></div>
                 ) : null;
               })()}
               {sel.errorCode ? <div className="kv"><span className="k">Error</span><span className="v" style={{ color: "var(--red)" }}>{sel.errorCode}</span></div> : null}
@@ -2823,7 +2823,7 @@ const FLOW_STEPS = [
 
 // ---------------------------------------------------------------------------
 // LIVE GATEWAY — talks to the real ../server (x402 over HTTP). Falls back to a
-// note when the server isn't running; the in-app PaymentModal stays the demo path.
+// note when the server isn't running; the in-app PaymentModal stays the fallback path.
 // ---------------------------------------------------------------------------
 
 type LiveStep = "idle" | "pinging" | "loading-services" | "ready" | "unpaid" | "paying" | "unlocked" | "offline";
@@ -3062,7 +3062,7 @@ export function GatewayPage({ workspace, tabLabel }: { workspace: Workspace; tab
 
           <div className="gw-note mb">
             <Shield width={14} height={14} />
-            <span><b>Demo facilitator mode:</b> this workspace simulates the 402 handshake. The production path is designed for x402 facilitator verification.</span>
+            <span><b>Facilitator fallback:</b> this workspace simulates the 402 handshake. The production path is designed for x402 facilitator verification.</span>
           </div>
         </>
       ) : (

@@ -75,19 +75,19 @@ export function cards({
     {
       light: true,
       ico: Activity,
-      title: "ArcMind Signal Hub",
+      title: "Decision Guard",
       sub: "Live BUY/SELL/HOLD · real Hyperliquid OI · on-chain log",
       onClick: () => onGoTab("signal"),
     },
     {
       ico: Brain,
-      title: "Buy Reasoning Traces",
+      title: "View Reasoning Proofs",
       sub: "$0.01/trace via Circle Gateway Nanopayments",
       onClick: () => onGoTab("reasoning"),
     },
     {
       ico: Copy,
-      title: "Copy-Trade with slash-bond",
+      title: "Copy ArcMind Strategy",
       sub: "Stake USDC · auto-exit on drawdown >15%",
       onClick: () => onGoTab("copy"),
     },
@@ -122,7 +122,7 @@ export function renderTab(
   const nodes: ReactNode[] = [];
   const tab = t.toLowerCase();
 
-  if (tab.includes("arbitrage") || tab.includes("arb")) {
+  if (tab.includes("arbitrage") || tab.includes("arb") || tab.includes("engine")) {
     nodes.push(<AgoraTradingWidget key="trading" />);
   }
   if (tab.includes("portfolio")) {
@@ -146,7 +146,7 @@ export function renderTab(
   if (tab.includes("reasoning") || tab.includes("trace")) {
     nodes.push(<ArcMindReasoningWidget key="reasoning" workspace={workspace} />);
   }
-  if (tab.includes("signal") || tab.includes("hub")) {
+  if (tab.includes("signal") || tab.includes("hub") || tab.includes("decision") || tab.includes("guard")) {
     nodes.push(
       <ArcDecisionLogWidget key="declog" />,
       <div key="pnl-debate" className="widget-card-grid-2">
@@ -156,13 +156,13 @@ export function renderTab(
       <ArcMindSignalHubWidget key="signal" workspace={workspace} />,
     );
   }
-  if (tab.includes("kill") || tab.includes("risk")) {
+  if (tab.includes("kill")) {
     nodes.push(<ArcMindKillSwitchWidget key="kill" workspace={workspace} />);
   }
   if (tab.includes("swap") || tab.includes("dex")) {
     nodes.push(<ArcMindSwapWidget key="swap" workspace={workspace} />);
   }
-  if (tab.includes("usyc") || tab.includes("yield")) {
+  if (tab.includes("usyc") || tab.includes("yield") || tab.includes("risk-off") || tab.includes("vault")) {
     nodes.push(
       <ArcMindYieldWidget key="yield" workspace={workspace} />,
       <ArcMindSwapWidget key="swap-yield" workspace={workspace} />,
@@ -710,9 +710,9 @@ function useCountUp(target: number, duration = 800) {
 const TOUR_KEY = "arcmind-tour-v1-done";
 const TOUR_STEPS = [
   { emoji: "⚡", title: "Welcome to ArcMind", body: "ArcMind is an autonomous AI trading agent on Arc L1. It reads Hyperliquid OI, ETH price, and funding rates — then records a BUY, SELL, or HOLD decision on-chain every 30 minutes. No human clicks." },
-  { emoji: "📡", title: "Signal Hub", body: "The Signal Hub shows ArcMind's live market analysis. See the reasoning behind each decision — ETH price, open interest, funding rate — and watch the countdown to the next signal." },
-  { emoji: "🧠", title: "Reasoning Traces", body: "Buy ArcMind's step-by-step thinking for $0.01 via Circle Nanopayments. Each trace shows the signals it read, the Kelly sizing it calculated, and the outcome. Own the agent's mind." },
-  { emoji: "🤝", title: "Copy Trading", body: "Stake USDC alongside ArcMind in CopyTradeEscrow.sol. The agent allocates proportionally. If drawdown exceeds 15%, the kill switch fires automatically and returns your stake. Slash-bonded." },
+  { emoji: "📡", title: "Decision Guard", body: "The Decision Guard shows ArcMind's live market analysis. See the reasoning behind each decision — ETH price, open interest, funding rate — and watch the countdown to the next signal." },
+  { emoji: "🧠", title: "Reasoning Proofs", body: "Reasoning Proofs show the source trail behind each decision. Paid unlocks use x402 when available; local fallback traces are marked and do not claim live settlement." },
+  { emoji: "🤝", title: "Copy Strategy", body: "Copy Strategy follows ArcMind's ETH/USDC decisions, not a hidden trader. Pause blocks new exposure; withdraw settles the visible session back toward USDC." },
   { emoji: "🛡️", title: "Kill Switch", body: "Set your personal drawdown threshold. ArcMind monitors live ETH price vs. your entry. If the loss hits your limit, it triggers an on-chain kill signal. The agent is accountable — or it's gone." },
 ];
 
