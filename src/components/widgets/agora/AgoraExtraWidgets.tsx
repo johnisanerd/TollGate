@@ -3,6 +3,7 @@ import {
   ArrowRightLeft, BarChart3, CheckCircle, CircleDollarSign,
   Loader2, RefreshCw, TrendingUp, Wallet, Zap, Activity,
   Shield, Globe, Send, Clock, Percent, ArrowUpRight, ArrowDownRight,
+  AlertTriangle,
 } from "lucide-react";
 import type { Workspace } from "../../../types";
 import { useLocalStore } from "../../../lib/storage";
@@ -770,7 +771,7 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
   // Swap state (reuse server)
   const [swapSide, setSwapSide] = useState<"BUY"|"SELL">("BUY");
   const [swapAmt, setSwapAmt] = useState("100");
-  const [swapQuote, setSwapQuote] = useState<{ amountOut: number; price: number } | null>(null);
+  const [swapQuote, setSwapQuote] = useState<{ amountOut: number; price: number; fallback?: boolean } | null>(null);
   const [swapping, setSwapping] = useState(false);
   const [swapDone, setSwapDone] = useState<string | null>(null);
 
@@ -827,13 +828,18 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
       setSwapQuote({
         price,
         amountOut: swapSide === "BUY" ? amount / price : amount * price,
+        fallback: true,
       });
-      setAppKitError("Live ETH quote unavailable. Local quote marked fallback; it is not a live price.");
+      setAppKitError("Live ETH quote is unavailable. Showing a fallback estimate only; execution is disabled until a live quote returns.");
     }
   }
 
   async function doSwap() {
     if (!swapQuote) return;
+    if (swapQuote.fallback) {
+      setAppKitError("Live quote required before swap execution. This fallback estimate cannot create a swap receipt or move funds.");
+      return;
+    }
     setSwapping(true);
     setSwapDone(null);
     setAppKitError(null);
@@ -1022,8 +1028,8 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
                 <div><div style={{ fontSize: 10, color: "var(--text-secondary)" }}>You receive</div><div style={{ fontSize: 14, fontWeight: 800, color: "#7C3AED" }}>{swapSide === "BUY" ? `${swapQuote.amountOut.toFixed(5)} ETH` : `$${swapQuote.amountOut.toFixed(2)}`}</div></div>
               </div>
               <button className="btn btn-acc" style={{ width: "100%", background: swapSide === "BUY" ? "#10B981" : "#EF4444", borderColor: "transparent" }}
-                onClick={doSwap} disabled={swapping}>
-                {swapping ? <><Loader2 size={11} className="wallet-spin" /> Executing…</> : <><Send size={11} /> Execute Swap · $0.02 fee</>}
+                onClick={doSwap} disabled={swapping || Boolean(swapQuote.fallback)}>
+                {swapQuote.fallback ? <><AlertTriangle size={11} /> Live quote required</> : swapping ? <><Loader2 size={11} className="wallet-spin" /> Executing…</> : <><Send size={11} /> Execute Swap · $0.02 fee</>}
               </button>
             </div>
           )}
@@ -1081,7 +1087,7 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
 
 // ── Arc DEX Swap Execution ──────────────────────────────────────────────────────
 
-interface SwapQuote { pair: string; side: string; amountIn: number; amountOut: number; price: number; slippagePct: number }
+interface SwapQuote { pair: string; side: string; amountIn: number; amountOut: number; price: number; slippagePct: number; fallback?: boolean }
 interface SwapReceipt { svc: string; side: string; amountIn: number; amountOut: number; price: number; hash: string; ts: string; status?: "open" | "closed" | "reversed" }
 
 export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
@@ -1111,14 +1117,19 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
         amountOut: side === "BUY" ? amount / price : amount * price,
         price,
         slippagePct: 0.18,
+        fallback: true,
       });
-      setSwapError("Live ETH quote unavailable. Local quote marked fallback; it is not a live price.");
+      setSwapError("Live ETH quote is unavailable. Showing a fallback estimate only; execution is disabled until a live quote returns.");
     }
     setQuoting(false);
   }
 
   async function executeSwap() {
     if (!quote) return;
+    if (quote.fallback) {
+      setSwapError("Live quote required before execution. This fallback estimate cannot create a swap receipt or move funds.");
+      return;
+    }
     setExecuting(true);
     setSwapError(null);
     try {
@@ -1244,8 +1255,10 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
             ))}
           </div>
           <button className="btn btn-acc" style={{ width: "100%", fontSize: 11, background: side === "BUY" ? "#10B981" : "#EF4444", borderColor: "transparent" }}
-            onClick={executeSwap} disabled={executing}>
-            {executing
+            onClick={executeSwap} disabled={executing || Boolean(quote.fallback)}>
+            {quote.fallback
+              ? <><AlertTriangle size={11} /> Live quote required to execute</>
+              : executing
               ? <><Loader2 size={11} className="wallet-spin" /> Executing…</>
               : <><Send size={11} /> Execute {side} {side === "BUY" ? `${quote.amountOut.toFixed(5)} ETH` : `$${quote.amountOut.toFixed(2)}`} · $0.02 USDC fee</>}
           </button>
@@ -1284,7 +1297,11 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
 
 // ── USYC Yield ─────────────────────────────────────────────────────────────────
 
-interface YieldReceipt { deposited: number; minted: number; apy: number; hash: string; ts: number; redeemedAt?: number; redeemHash?: string }
+interface YieldReceipt { deposited: number; minted: number; apy: number; hash: string; ts: number; redeemedAt?: number; redeemHash?: string; fallback?: boolean }
+
+function isLocalYieldReceipt(dep: YieldReceipt): boolean {
+  return Boolean(dep.fallback) || dep.hash.startsWith("usyc_local");
+}
 
 export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
   const [apy, setApy] = useState<number | null>(null);
@@ -1330,10 +1347,7 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
       const minted = parseFloat((amt * (1 - 0.005)).toFixed(4)); // 0.5% mint fee
       setDeposits(prev => [{ deposited: amt, minted, apy: currentApy, hash, ts: Date.now() }, ...prev].slice(0, 10));
     } catch {
-      const hash = localReceiptId("usyc_local").slice(0, 16);
-      const minted = parseFloat((amt * (1 - 0.005)).toFixed(4));
-      setDeposits(prev => [{ deposited: amt, minted, apy: currentApy, hash, ts: Date.now() }, ...prev].slice(0, 10));
-      setYieldError("USYC gateway unavailable. Local deposit receipt created; no live USYC mint claim was made.");
+      setYieldError("USYC gateway unavailable. No deposit was created, no USYC was minted, and no funds moved.");
     }
     setDepositing(false);
   }
@@ -1347,7 +1361,7 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
   }
 
   function redeemAll() {
-    setDeposits(prev => prev.map((dep) => dep.redeemedAt ? dep : {
+    setDeposits(prev => prev.map((dep) => dep.redeemedAt || isLocalYieldReceipt(dep) ? dep : {
       ...dep,
       redeemedAt: Date.now(),
       redeemHash: localReceiptId("usyc_redeem_all").slice(0, 16),
@@ -1355,10 +1369,15 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
     setYieldError("All active USYC positions queued for redemption.");
   }
 
-  const activeDeposits = deposits.filter((d) => !d.redeemedAt);
+  function clearDeposit(index: number) {
+    setDeposits(prev => prev.filter((_, i) => i !== index));
+    setYieldError("Local USYC draft removed.");
+  }
+
+  const activeDeposits = deposits.filter((d) => !d.redeemedAt && !isLocalYieldReceipt(d));
   const totalDeposited = activeDeposits.reduce((s, d) => s + d.deposited, 0);
   const totalAccruedUsdc = deposits.reduce((d, dep) => {
-    if (dep.redeemedAt) return d;
+    if (dep.redeemedAt || isLocalYieldReceipt(dep)) return d;
     const ageYears = (now - dep.ts) / (365.25 * 24 * 3600 * 1000);
     return d + dep.minted * (dep.apy / 100) * ageYears;
   }, 0);
@@ -1436,17 +1455,20 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
             <thead><tr><th>Deposited</th><th>USYC minted</th><th>APY</th><th>Yield earned</th><th>Receipt</th><th>Status</th></tr></thead>
             <tbody>
               {deposits.map((d, i) => {
+                const local = isLocalYieldReceipt(d);
                 const ageYears = (now - d.ts) / (365.25 * 24 * 3600 * 1000);
-                const earned = d.minted * (d.apy / 100) * ageYears;
+                const earned = local ? 0 : d.minted * (d.apy / 100) * ageYears;
                 return (
                   <tr key={i}>
                     <td className="svc-table__num">${d.deposited.toFixed(2)}</td>
-                    <td className="svc-table__num">{d.minted.toFixed(4)}</td>
+                    <td className="svc-table__num">{local ? "not minted" : d.minted.toFixed(4)}</td>
                     <td className="svc-table__num" style={{ color: "#10B981" }}>{d.apy.toFixed(1)}%</td>
                     <td className="svc-table__num" style={{ color: d.redeemedAt ? "var(--text-secondary)" : "#10B981" }}>+${d.redeemedAt ? "0.000000" : earned.toFixed(6)}</td>
                     <td style={{ fontSize: 10 }}><code>{d.redeemHash ?? d.hash}...</code></td>
                     <td className="svc-table__num">
-                      {d.redeemedAt ? (
+                      {local ? (
+                        <button className="btn btn-sm" style={{ fontSize: 10, padding: "3px 8px" }} onClick={() => clearDeposit(i)}>Clear draft</button>
+                      ) : d.redeemedAt ? (
                         <span style={{ color: "var(--text-secondary)", fontSize: 10 }}>redeemed</span>
                       ) : (
                         <button className="btn btn-sm" style={{ fontSize: 10, padding: "3px 8px" }} onClick={() => redeem(i)}>Redeem</button>
