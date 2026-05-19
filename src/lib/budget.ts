@@ -11,6 +11,21 @@ export type BudgetPolicy = {
   paused: boolean;
 };
 
+export type TreasuryTopUp = {
+  id: string;
+  amount: number;
+  ts: string;
+  source: "wallet_signature" | "local_admin";
+  signature?: string;
+};
+
+export type TreasuryState = {
+  fundedUsd: number;
+  spentUsd: number;
+  availableUsd: number;
+  topUps: TreasuryTopUp[];
+};
+
 export type BudgetTx = {
   id: string;
   amount: number;
@@ -21,6 +36,7 @@ export type BudgetTx = {
 
 function policyKey(agentId: string)  { return `budget.policy.${agentId}`; }
 function logKey(agentId: string)     { return `budget.txLog.${agentId}`; }
+function treasuryKey(agentId: string) { return `budget.treasury.${agentId}`; }
 
 const DEFAULT_POLICY: BudgetPolicy = { dailyLimitUsd: 1.0, maxPerTxUsd: 0.5, paused: false };
 
@@ -57,6 +73,42 @@ export function getTxLog(agentId: string): BudgetTx[] {
   }
 }
 
+export function getTreasuryTopUps(agentId: string): TreasuryTopUp[] {
+  try {
+    const raw = localStorage.getItem(treasuryKey(agentId));
+    return raw ? (JSON.parse(raw) as TreasuryTopUp[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getTreasuryState(agentId: string): TreasuryState {
+  const topUps = getTreasuryTopUps(agentId);
+  const fundedUsd = topUps.reduce((sum, item) => sum + item.amount, 0);
+  const spentUsd = spentToday(getTxLog(agentId));
+  return {
+    fundedUsd,
+    spentUsd,
+    availableUsd: Math.max(0, fundedUsd - spentUsd),
+    topUps,
+  };
+}
+
+export function fundTreasury(agentId: string, amountUsd: number, signature?: string): TreasuryTopUp {
+  const topUp: TreasuryTopUp = {
+    id: "topup_" + Math.random().toString(36).slice(2, 10),
+    amount: Math.max(0, amountUsd),
+    ts: new Date().toISOString(),
+    source: signature ? "wallet_signature" : "local_admin",
+    signature,
+  };
+  try {
+    const updated = [topUp, ...getTreasuryTopUps(agentId)].slice(0, 20);
+    localStorage.setItem(treasuryKey(agentId), JSON.stringify(updated));
+  } catch { /* storage unavailable */ }
+  return topUp;
+}
+
 function spentToday(log: BudgetTx[]): number {
   const cutoff = Date.now() - 86_400_000;
   return log
@@ -69,6 +121,10 @@ function spentToday(log: BudgetTx[]): number {
 export function checkBudget(agentId: string, amountUsd: number): { ok: boolean; reason?: string } {
   const policy = getPolicy(agentId);
   if (policy.paused) return { ok: false, reason: "agent_paused" };
+  const treasury = getTreasuryState(agentId);
+  if (amountUsd > treasury.availableUsd) {
+    return { ok: false, reason: `treasury_insufficient (available $${treasury.availableUsd.toFixed(2)}, needs $${amountUsd.toFixed(2)})` };
+  }
   if (policy.maxPerTxUsd > 0 && amountUsd > policy.maxPerTxUsd) {
     return { ok: false, reason: `exceeds_max_per_tx ($${amountUsd.toFixed(2)} > $${policy.maxPerTxUsd.toFixed(2)})` };
   }

@@ -3,7 +3,7 @@
  *
  * 6-step autonomous flow:
  *   1. Agent discovers price gap via Arc Price Oracle (x402 $0.02) — real gateway
- *   2. AgentBudget policy check ($20 daily limit)
+ *   2. AgentTreasury + AgentBudget policy check (signed allowance, daily limit, per-call cap)
  *   3. Consumer pays $0.05 x402 for Arb Executor service — real gateway
  *   4. CCTP cross-chain swap: Arc → Base (<500ms finality)
  *   5. Net profit captured, receipt signed (EIP-191)
@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { ActionPanel } from "../ActionPanel";
 import { AgentScoreComparison } from "../AgentScoreBadge";
-import { checkBudget, spend, getPolicy, getRemainingToday } from "../../../lib/budget";
+import { checkBudget, spend, getPolicy, getRemainingToday, getTreasuryState, fundTreasury, type TreasuryState } from "../../../lib/budget";
 import { updateReputation } from "../../../lib/agentCard";
 
 type StepStatus = "idle" | "running" | "done" | "failed";
@@ -41,6 +41,8 @@ type Step = {
 
 const AGENT_ID = "agent_arc_arb";
 const PROVIDER_ID = "agent_arc_executor";
+const REQUIRED_SPEND_USD = 0.07;
+const DEFAULT_TOP_UP_USD = 1.0;
 
 function paidGatewayHeaders(agentId: string, extra: Record<string, string> = {}): Record<string, string> {
   return { "X-Agent-Id": agentId, ...extra };
@@ -48,7 +50,7 @@ function paidGatewayHeaders(agentId: string, extra: Record<string, string> = {})
 
 const INITIAL_STEPS: Step[] = [
   { id: "oracle",  label: "Discover price gap via Arc Oracle",   tag: "x402 $0.02 · arc-testnet",         status: "idle" },
-  { id: "budget",  label: "AgentBudget policy check",            tag: "AgentBudget.sol · $20 daily limit", status: "idle" },
+  { id: "budget",  label: "Agent Treasury + policy check",       tag: "signed allowance · daily/per-call cap", status: "idle" },
   { id: "pay",     label: "Pay $0.05 x402 for Arb Executor",     tag: "USDC · X-PAYMENT header",           status: "idle" },
   { id: "cctp",    label: "CCTP cross-chain swap Arc → Base",    tag: "Circle CCTP · <500ms",              status: "idle" },
   { id: "profit",  label: "Profit captured, receipt signed",      tag: "EIP-191 · Nanopayments",            status: "idle" },
@@ -107,9 +109,15 @@ export function AgoraTradingWidget() {
   const [profit, setProfit]   = useState<number | null>(null);
   const [paid, setPaid]       = useState<number | null>(null);
   const [remaining, setRemaining] = useState(() => getRemainingToday(AGENT_ID));
+  const [treasury, setTreasury] = useState<TreasuryState>(() => getTreasuryState(AGENT_ID));
+  const [funding, setFunding] = useState(false);
+  const [fundingMsg, setFundingMsg] = useState<string | null>(null);
   const cancelRef = useRef(false);
 
-  useEffect(() => { setRemaining(getRemainingToday(AGENT_ID)); }, []);
+  useEffect(() => {
+    setRemaining(getRemainingToday(AGENT_ID));
+    setTreasury(getTreasuryState(AGENT_ID));
+  }, []);
 
   function addLog(msg: string) { setLog((p) => [...p, msg]); }
   function setStep(id: string, status: StepStatus, detail?: string) {
@@ -123,8 +131,50 @@ export function AgoraTradingWidget() {
     return true;
   }
 
+  async function approveTreasuryAllowance() {
+    setFunding(true);
+    setFundingMsg(null);
+    try {
+      const eth = (window as unknown as { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum;
+      if (!eth) throw new Error("wallet_unavailable");
+      const accounts = await eth.request({ method: "eth_requestAccounts" }) as string[];
+      const account = accounts[0];
+      if (!account) throw new Error("wallet_unavailable");
+      const msg = [
+        "Authorize Agent Treasury allowance",
+        `Agent: ${AGENT_ID}`,
+        `Amount: ${DEFAULT_TOP_UP_USD.toFixed(2)} USDC`,
+        "Purpose: x402 service calls only",
+        `Per-call max: ${getPolicy(AGENT_ID).maxPerTxUsd.toFixed(2)} USDC`,
+        `Timestamp: ${new Date().toISOString()}`,
+      ].join("\n");
+      const sig = await eth.request({ method: "personal_sign", params: [msg, account] }) as string;
+      fundTreasury(AGENT_ID, DEFAULT_TOP_UP_USD, sig);
+      setTreasury(getTreasuryState(AGENT_ID));
+      setFundingMsg(`Signed treasury allowance added: $${DEFAULT_TOP_UP_USD.toFixed(2)} USDC. This is the source agents spend from; without this signature, the agent cannot pay.`);
+    } catch {
+      setFundingMsg("Treasury allowance was not signed. Agent has no approved funds and cannot execute x402 payments.");
+    } finally {
+      setFunding(false);
+    }
+  }
+
   async function runAgent() {
     if (running) return;
+    const preflight = checkBudget(AGENT_ID, REQUIRED_SPEND_USD);
+    if (!preflight.ok) {
+      setDone(false);
+      setPaid(null);
+      setProfit(null);
+      setGrossProfit(null);
+      setReceiptId(null);
+      setReceiptMode(null);
+      setLog([`Blocked before payment: ${preflight.reason}. Agent must receive signed Agent Treasury allowance first.`]);
+      setSteps(INITIAL_STEPS.map((s) => s.id === "budget"
+        ? { ...s, status: "failed" as StepStatus, detail: preflight.reason }
+        : { ...s, status: "idle" as StepStatus, detail: undefined }));
+      return;
+    }
     cancelRef.current = false;
     setRunning(true); setDone(false); setLog([]);
     setSteps(INITIAL_STEPS.map((s) => ({ ...s, status: "idle" as StepStatus, detail: undefined })));
@@ -162,23 +212,22 @@ export function AgoraTradingWidget() {
       // Step 2: Budget check
       setStep("budget", "running");
       const policy = getPolicy(AGENT_ID);
-      addLog(`ArcArb: AgentBudget.checkAndSpend(${AGENT_ID}, $0.07) · daily $${policy.dailyLimitUsd.toFixed(2)}…`);
+      addLog(`ArcArb: AgentTreasury.authorize(${AGENT_ID}, $${REQUIRED_SPEND_USD.toFixed(2)}) -> policy + balance check...`);
       await sleep(700);
-      const budgetResult = checkBudget(AGENT_ID, 0.07);
+      const budgetResult = checkBudget(AGENT_ID, REQUIRED_SPEND_USD);
       if (!budgetResult.ok) {
         setStep("budget", "failed", `Blocked: ${budgetResult.reason}`);
         addLog(`✗ Budget check failed: ${budgetResult.reason}`);
         return;
       }
-      setStep("budget", "done", `Approved — $${getRemainingToday(AGENT_ID).toFixed(2)} remaining after this tx`);
-      addLog("✓ AgentBudget: $0.07 approved (oracle $0.02 + executor $0.05)");
+      setStep("budget", "done", `Approved from Agent Treasury / $${getTreasuryState(AGENT_ID).availableUsd.toFixed(2)} available before spend`);
+      addLog(`Agent Treasury approved $${REQUIRED_SPEND_USD.toFixed(2)} (oracle $0.02 + executor $0.05)`);
       await sleep(300);
       if (wasCancelled()) return;
 
       // Step 3: Pay x402 — real gateway call
       setStep("pay", "running");
       addLog("ArcArb: sending X-PAYMENT header to svc_arc_arb gateway…");
-      spend(AGENT_ID, 0.07);
       let rid: string | null = null;
       let paymentFallback = false;
       try {
@@ -198,8 +247,10 @@ export function AgoraTradingWidget() {
       }
       setReceiptId(rid);
       setReceiptMode(paymentFallback ? "fallback" : "live");
-      setPaid(0.07);
+      if (!paymentFallback) spend(AGENT_ID, REQUIRED_SPEND_USD);
+      setPaid(paymentFallback ? 0 : REQUIRED_SPEND_USD);
       setRemaining(getRemainingToday(AGENT_ID));
+      setTreasury(getTreasuryState(AGENT_ID));
       setStep("pay", "done", paymentFallback
         ? `${rid.slice(0, 18)}... / fallback receipt / no live USDC moved`
         : `${rid.slice(0, 18)}... / $0.05 USDC / arc-testnet`);
@@ -227,7 +278,7 @@ export function AgoraTradingWidget() {
       // Step 5: Profit
       setStep("profit", "running");
       const grossProfit = gap * 5;
-      const netProfit = grossProfit - 0.07;
+      const netProfit = grossProfit - REQUIRED_SPEND_USD;
       await sleep(800);
       setGrossProfit(grossProfit);
       setProfit(netProfit);
@@ -264,24 +315,29 @@ export function AgoraTradingWidget() {
     setSteps(INITIAL_STEPS.map((s) => ({ ...s, status: "idle" as StepStatus, detail: undefined })));
     setLog([]); setDone(false); setReceiptId(null); setReceiptMode(null); setGrossProfit(null); setProfit(null); setPaid(null);
     setRemaining(getRemainingToday(AGENT_ID));
+    setTreasury(getTreasuryState(AGENT_ID));
   }
 
   function cancelRun() {
     cancelRef.current = true;
   }
 
+  const policy = getPolicy(AGENT_ID);
+  const canFundRun = treasury.availableUsd >= REQUIRED_SPEND_USD && !policy.paused;
+
   return (
     <ActionPanel
       icon={<Coins size={15} />}
       title="Cross-Platform Agent Engine — Arc L1"
-      sub={<>ArcArb Agent discovers price gaps, pays via x402, executes <strong>CCTP cross-chain swap</strong> — zero human clicks. Agora Agents Hackathon · <strong>Circle tools</strong>.</>}
+      sub={<>ArcArb Agent can only spend from a signed <strong>Agent Treasury allowance</strong>. x402 is the payment rail; Treasury + Policy decide whether the agent may use it.</>}
     >
       {/* Agent budget strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 8, marginBottom: 14 }}>
         {[
-          { label: "Daily budget",   val: "$20.00" },
-          { label: "Remaining today", val: `$${remaining.toFixed(2)}` },
-          { label: "Network",        val: "Arc L1" },
+          { label: "Treasury available", val: `$${treasury.availableUsd.toFixed(2)} USDC` },
+          { label: "Requested spend",    val: `$${REQUIRED_SPEND_USD.toFixed(2)} USDC` },
+          { label: "Daily policy",       val: `$${policy.dailyLimitUsd.toFixed(2)} / day` },
+          { label: "Max per call",       val: `$${policy.maxPerTxUsd.toFixed(2)}` },
         ].map((g) => (
           <div key={g.label} style={{ background: "var(--bg-2)", borderRadius: 9, padding: "8px 10px" }}>
             <div style={lbl}>{g.label}</div>
@@ -290,10 +346,51 @@ export function AgoraTradingWidget() {
         ))}
       </div>
 
+      <div style={{
+        marginBottom: 14,
+        padding: "12px 14px",
+        borderRadius: 12,
+        border: canFundRun ? "1px solid rgba(34,197,94,0.35)" : "1px solid rgba(251,191,36,0.45)",
+        background: canFundRun ? "rgba(34,197,94,0.07)" : "rgba(251,191,36,0.08)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "space-between" }}>
+          <div style={{ minWidth: 220, flex: "1 1 260px" }}>
+            <div style={{ fontSize: ".78rem", fontWeight: 900, color: canFundRun ? "var(--green)" : "#fbbf24" }}>
+              {canFundRun ? "Agent Treasury funded" : "Agent has no spendable funds"}
+            </div>
+            <div style={{ fontSize: ".72rem", color: "#dbeafe", lineHeight: 1.55, marginTop: 4 }}>
+              The agent does not own your wallet. It asks Treasury for an allowance; if you do not sign an allowance, x402 payment execution is blocked before any API call can charge funds.
+            </div>
+          </div>
+          <button
+            onClick={approveTreasuryAllowance}
+            disabled={funding}
+            style={{
+              border: "1px solid rgba(96,165,250,0.55)",
+              borderRadius: 10,
+              background: "linear-gradient(135deg, #2563eb 0%, #22d3ee 100%)",
+              color: "#03121f",
+              fontWeight: 900,
+              fontSize: ".76rem",
+              padding: "10px 12px",
+              cursor: funding ? "wait" : "pointer",
+            }}
+          >
+            {funding ? "Waiting for wallet..." : `Sign $${DEFAULT_TOP_UP_USD.toFixed(2)} treasury allowance`}
+          </button>
+        </div>
+        {fundingMsg && (
+          <div style={{ marginTop: 10, fontSize: ".7rem", color: fundingMsg.includes("not signed") ? "#fca5a5" : "#86efac" }}>
+            {fundingMsg}
+          </div>
+        )}
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8, marginBottom: 14 }}>
         {[
           { label: "Source", value: "Arc Oracle provides the price gap; if it is unavailable, the run is marked local fallback." },
-          { label: "Funds", value: "Uses the agent daily budget, not copy-trading stake. Budget check blocks overspend before x402 payment." },
+          { label: "Funds", value: "Funds come from signed Agent Treasury allowance, not from an agent-owned wallet and not from copy-trading stake." },
+          { label: "Policy", value: "Treasury checks balance, daily cap and per-call cap before x402 payment. If any check fails, the run stops." },
           { label: "Route", value: "Arc USDC payment -> CCTP bridge -> Base execution -> profit receipt." },
           { label: "Safety", value: "Cancel stops the running sequence; Reset clears only this visible run state." },
         ].map((item) => (
@@ -496,7 +593,7 @@ export function AgoraTradingWidget() {
       </div>
 
       <p style={{ margin: "12px 0 0", fontSize: ".73rem", color: "var(--muted)", lineHeight: 1.55 }}>
-        On-chain stack: <code>ServiceRegistry</code> → <code>AgentBudget</code> → <code>x402 gateway</code> → <code>Circle CCTP</code> → <code>AgentReceiptRegistry</code> → <code>AgentScore</code>. No human approval.{" "}
+        On-chain stack: <code>AgentTreasury</code> → <code>ServiceRegistry</code> → <code>AgentBudget</code> → <code>x402 gateway</code> → <code>Circle CCTP</code> → <code>AgentReceiptRegistry</code> → <code>AgentScore</code>. No agent-owned hot wallet required.{" "}
         <a href="https://developers.circle.com" target="_blank" rel="noreferrer"
           style={{ color: "#4B7BFF", display: "inline-flex", alignItems: "center", gap: 3 }}>
           <ExternalLink size={10} /> Circle Docs
