@@ -19,6 +19,11 @@ import { workspace as sui, rawServices as suiSvcs, agentRaw as suiAgent, seedRow
 import { workspace as qie, rawServices as qieSvcs, agentRaw as qieAgent, seedRows as qieRows } from "./workspaces/qie";
 import { workspace as agora, rawServices as agoraSvcs, agentRaw as agoraAgent, seedRows as agoraRows } from "./workspaces/agora";
 import { workspace as polygon, rawServices as polySvcs, agentRaw as polyAgent, seedRows as polyRows } from "./workspaces/polygon";
+import { docs as ogDocs } from "./workspaces/0g/docs";
+import { integrations as ogIntegrations } from "./workspaces/0g/integrations";
+import { docs as agoraDocs } from "./workspaces/agora/docs";
+import { integrations as agoraIntegrations } from "./workspaces/agora/integrations";
+import type { DocsModule, IntegrationsModule } from "./workspaces/_docs";
 
 export { SEEDED_PINS };
 
@@ -27,6 +32,24 @@ export { SEEDED_PINS };
 export const workspaces = [og, mantle, arbitrum, sui, qie, agora, polygon];
 
 export const wsBySlug = (slug: string) => workspaces.find((w) => w.route === `/${slug}`);
+
+// ── Docs & Integrations ──────────────────────────────────────────────────────
+// Generic lookup: any workspace can opt in by adding an entry here. Only the 0G
+// and Arc (agora) workspaces ship content today.
+
+const DOCS: Partial<Record<WorkspaceId, DocsModule>> = {
+  "0g": ogDocs,
+  agora: agoraDocs,
+};
+
+const INTEGRATIONS: Partial<Record<WorkspaceId, IntegrationsModule>> = {
+  "0g": ogIntegrations,
+  agora: agoraIntegrations,
+};
+
+export const docsFor = (wsId: WorkspaceId): DocsModule | undefined => DOCS[wsId];
+export const integrationsFor = (wsId: WorkspaceId): IntegrationsModule | undefined =>
+  INTEGRATIONS[wsId];
 
 // ── Services ────────────────────────────────────────────────────────────────
 
