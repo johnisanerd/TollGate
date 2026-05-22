@@ -10985,3 +10985,45 @@ select.twk-field {
     margin: -2px 0 4px;
   }
 }
+/* ── Workspace Docs portal & Integrations ─────────────────────────────────── */
+.ap402 .docs-portal { display: grid; grid-template-columns: 210px 1fr; gap: 28px; align-items: start; }
+.ap402 .docs-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 16px; }
+.ap402 .docs-nav button { text-align: left; padding: 8px 12px; border-radius: 8px; border: 0; background: transparent; color: var(--ink-2); font-size: 13px; font-weight: 600; cursor: pointer; transition: background .12s, color .12s; }
+.ap402 .docs-nav button:hover { background: var(--bg-2); color: var(--ink); }
+.ap402 .docs-nav button.active { background: color-mix(in srgb, var(--accent, var(--accent-primary, #6366f1)) 16%, transparent); color: var(--ink); }
+.ap402 .docs-body { min-width: 0; max-width: 80ch; }
+.ap402 .doc-h2 { font-size: 22px; font-weight: 800; letter-spacing: -.02em; margin: 4px 0 14px; padding-bottom: 8px; border-bottom: 2px solid var(--border-strong); }
+.ap402 .doc-h3 { font-size: 16px; font-weight: 700; margin: 22px 0 8px; }
+.ap402 .doc-prose { color: var(--ink-2); font-size: 14px; line-height: 1.65; margin: 10px 0; }
+.ap402 .doc-list { color: var(--ink-2); font-size: 14px; line-height: 1.7; margin: 10px 0; padding-left: 22px; }
+.ap402 .doc-callout { font-size: 13px; line-height: 1.55; border-radius: 10px; padding: 12px 14px; margin: 14px 0; border-left: 3px solid; }
+.ap402 .doc-callout.info { background: var(--bg-2); border-color: #6366f1; color: var(--ink-2); }
+.ap402 .doc-callout.warn { background: var(--amber-bg); border-color: var(--amber); color: #a8730c; }
+.ap402 .doc-callout.success { background: var(--green-bg); border-color: var(--green); color: var(--green); }
+.ap402 .doc-code { position: relative; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; margin: 14px 0; overflow: hidden; }
+.ap402 .doc-code-cap { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: 8px 12px 0; }
+.ap402 .doc-code pre { margin: 0; padding: 12px 14px; overflow-x: auto; }
+.ap402 .doc-code code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: var(--ink); white-space: pre; }
+.ap402 .doc-copy { position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-1); color: var(--ink-2); cursor: pointer; }
+.ap402 .doc-copy:hover { color: var(--ink); }
+.ap402 .doc-table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+.ap402 .doc-table th, .ap402 .doc-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.ap402 .doc-table th { font-weight: 700; color: var(--ink); }
+.ap402 .doc-table td { color: var(--ink-2); }
+.ap402 .doc-endpoint { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin: 14px 0; }
+.ap402 .doc-endpoint-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ap402 .doc-method { font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; letter-spacing: .04em; }
+.ap402 .doc-method.get { background: var(--green-bg); color: var(--green); }
+.ap402 .doc-method.post { background: rgba(31, 122, 255, .14); color: #1f6ae0; }
+.ap402 .doc-path { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--ink); }
+.ap402 .intg-group { margin: 26px 0; }
+.ap402 .intg-cat { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding-bottom: 6px; border-bottom: 2px solid var(--border-strong); margin-bottom: 14px; }
+.ap402 .intg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.ap402 .intg-card { border: 1px solid var(--border); border-radius: 12px; padding: 16px; background: var(--bg-1); }
+.ap402 .intg-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ap402 .intg-card-head h3 { font-size: 15px; font-weight: 700; }
+.ap402 .intg-link { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--accent, var(--accent-primary, #6366f1)); text-decoration: none; }
+@media (max-width: 720px) {
+  .ap402 .docs-portal { grid-template-columns: 1fr; }
+  .ap402 .docs-nav { flex-direction: row; flex-wrap: wrap; position: static; }
+}
