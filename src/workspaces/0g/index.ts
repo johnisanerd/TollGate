@@ -13,7 +13,7 @@ export const workspace: Workspace = {
   pitch: "Agents pay per inference job and per storage write; receipts link to verifiable job metadata in 0G Storage.",
   tags: ["x402 Gateway", "0G Compute", "0G Storage", "TEE & Privacy", "MCP Server"],
   networks: ["0g-galileo"],
-  tabs: ["Overview", "Agent Identity", "Compute", "Trading Arena", "Storage & Memory", "TEE & Privacy", "Receipts"],
+  tabs: ["Overview", "Agent Identity", "Compute", "Trading Arena", "Storage & Memory", "TEE & Privacy", "Receipts", "Docs", "Integrations"],
   accent: "#7C5CF8",
   darkAccent: "#9D85FF",
   Icon: ZeroGLogo,

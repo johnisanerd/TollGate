@@ -13,7 +13,7 @@ export const workspace: Workspace = {
   pitch: "ArcMind: the first autonomous trading agent that shows you its reasoning, lets you copy-trade with $1, and kills itself when it starts losing — all settled in USDC on Arc L1.",
   tags: ["Cross-Chain Arb", "Copy Strategy", "Reasoning Proofs", "Decision Guard", "Kill Switch"],
   networks: ["arc-testnet"],
-  tabs: ["Overview", "Decision Guard", "Reasoning Proofs", "Copy Strategy", "Kill Switch", "Risk-Off Vault", "App Kit", "Agent Engine", "Portfolio Manager", "Receipts"],
+  tabs: ["Overview", "Decision Guard", "Reasoning Proofs", "Copy Strategy", "Kill Switch", "Risk-Off Vault", "App Kit", "Agent Engine", "Portfolio Manager", "Receipts", "Docs", "Integrations"],
   accent: "#1652F0",
   darkAccent: "#4B7BFF",
   Icon: CircleLogo,
