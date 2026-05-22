@@ -18,6 +18,7 @@ import {
   Network,
   Pause,
   Play,
+  Plug,
   Radio,
   ReceiptText,
   RefreshCw,
@@ -127,7 +128,7 @@ type WorkspaceDashboardProps = {
 
 const FALLBACK_RAIL_ICONS = [LayoutDashboard, ReceiptText, CreditCard, CodeIcon, FileText, CircleDollarSign, SettingsIcon];
 
-export type RailKind = "overview" | "agents" | "receipts" | "gateway" | "catalogue" | "service" | "verify";
+export type RailKind = "overview" | "agents" | "receipts" | "gateway" | "catalogue" | "service" | "verify" | "docs" | "integrations";
 export type RailItem = { label: string; kind: RailKind; Icon: typeof LayoutDashboard };
 
 export function buildRail(workspace: Workspace): RailItem[] {
@@ -149,6 +150,7 @@ export function railIconFor(tab: string, index: number) {
   if (t.includes("data") || t.includes("api") || t.includes("endpoint") || t.includes("service") || t.includes("catalog") || t.includes("market")) return Globe;
   if (t.includes("gateway") || t.includes("checkout") || t.includes("trading") || t.includes("defi")) return Zap;
   if (t.includes("doc") || t.includes("sdk") || t.includes("guide") || t.includes("learn")) return BookOpen;
+  if (t.includes("integration")) return Plug;
   if (t.includes("policy") || t.includes("verify") || t.includes("proof") || t.includes("security") || t.includes("privacy")) return ShieldCheck;
   if (t.includes("compute") || t.includes("inference") || t.includes("network") || t.includes("node") || t.includes("chain")) return Network;
   if (t.includes("storage") || t.includes("vault") || t.includes("bucket")) return FileText;
@@ -181,9 +183,11 @@ function ago(iso: string) {
 
 const SERVICE_TAB_KW = ["data", "trading", "arbitrage", "arb", "engine", "analysis", "tax", "compute", "storage", "signal", "analytic", "intel", "model", "oracle", "inference", "report", "endpoint", "query", "feed", "checkout"];
 
-export function pageKind(tab: string, index: number): "overview" | "agents" | "receipts" | "gateway" | "catalogue" | "service" | "verify" {
+export function pageKind(tab: string, index: number): "overview" | "agents" | "receipts" | "gateway" | "catalogue" | "service" | "verify" | "docs" | "integrations" {
   const t = tab.toLowerCase();
   if (index === 0 || t.includes("overview")) return "overview";
+  if (t === "docs" || t === "documentation") return "docs";
+  if (t.includes("integration")) return "integrations";
   if (t.includes("gateway") || t.includes("explainer") || t.includes("debugger") || t.includes("playground") || t.includes("sdk")) return "gateway";
   if (t.includes("ai services") || t.includes("agent services")) return "service";
   if (t.includes("agent identity") || t.includes("agent wallet") || t.includes("agent marketplace") || t.includes("agent economy") || t.includes("agent arena") || t.includes("agent credit") || t.includes("budget dashboard") || t.includes("qie wallet")) return "service";
