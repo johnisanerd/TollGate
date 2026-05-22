@@ -4,7 +4,7 @@
 export type DocBlock =
   | { kind: "heading"; text: string; level?: 2 | 3 }
   | { kind: "prose"; text: string }
-  | { kind: "code"; lang: string; code: string; caption?: string }
+  | { kind: "code"; lang?: string; code: string; caption?: string }
   | { kind: "callout"; tone: "info" | "warn" | "success"; text: string }
   | { kind: "list"; ordered?: boolean; items: string[] }
   | { kind: "table"; headers: string[]; rows: string[][] }
@@ -28,7 +28,7 @@ export type IntegrationCard = {
   category: "SDK" | "MCP" | "API" | "Webhook" | "Chain" | "Wallet";
   desc: string;
   status: "available" | "beta" | "soon";
-  code?: { lang: string; code: string };
+  code?: { lang?: string; code: string };
   link?: { label: string; url: string };
 };
 

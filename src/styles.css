@@ -11002,7 +11002,7 @@ select.twk-field {
 .ap402 .doc-callout.success { background: var(--green-bg); border-color: var(--green); color: var(--green); }
 .ap402 .doc-code { position: relative; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; margin: 14px 0; overflow: hidden; }
 .ap402 .doc-code-cap { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: 8px 12px 0; }
-.ap402 .doc-code pre { margin: 0; padding: 12px 14px; overflow-x: auto; }
+.ap402 .doc-code pre { margin: 0; padding: 12px 52px 12px 14px; overflow-x: auto; }
 .ap402 .doc-code code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: var(--ink); white-space: pre; }
 .ap402 .doc-copy { position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-1); color: var(--ink-2); cursor: pointer; }
 .ap402 .doc-copy:hover { color: var(--ink); }
