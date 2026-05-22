@@ -15,6 +15,7 @@ import {
   type RailKind,
 } from "../components/WorkspaceDashboard";
 import { slugifyTab } from "../components/ui/AppSidebar";
+import { DocsPage, IntegrationsPage } from "../components/docs";
 import type { WorkspaceOutletContext } from "../layouts/AppLayout";
 import { TabFade } from "../components/ui/Motion";
 
@@ -113,6 +114,10 @@ export function WorkspacePage() {
         />
       ) : kind === "gateway" ? (
         <GatewayPage workspace={workspace} tabLabel={tabLabel} />
+      ) : kind === "docs" ? (
+        <DocsPage workspace={workspace} />
+      ) : kind === "integrations" ? (
+        <IntegrationsPage workspace={workspace} />
       ) : kind === "service" || kind === "verify" ? (
         <ServiceTabPage
           services={workspaceServices}
