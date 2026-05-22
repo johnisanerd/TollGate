@@ -10998,7 +10998,7 @@ select.twk-field {
 .ap402 .doc-list { color: var(--ink-2); font-size: 14px; line-height: 1.7; margin: 10px 0; padding-left: 22px; }
 .ap402 .doc-callout { font-size: 13px; line-height: 1.55; border-radius: 10px; padding: 12px 14px; margin: 14px 0; border-left: 3px solid; }
 .ap402 .doc-callout.info { background: var(--bg-2); border-color: #6366f1; color: var(--ink-2); }
-.ap402 .doc-callout.warn { background: var(--amber-bg); border-color: var(--amber); color: #a8730c; }
+.ap402 .doc-callout.warn { background: var(--amber-bg); border-color: var(--amber); color: var(--amber); }
 .ap402 .doc-callout.success { background: var(--green-bg); border-color: var(--green); color: var(--green); }
 .ap402 .doc-code { position: relative; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; margin: 14px 0; overflow: hidden; }
 .ap402 .doc-code-cap { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: 8px 12px 0; }
@@ -11014,7 +11014,7 @@ select.twk-field {
 .ap402 .doc-endpoint-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ap402 .doc-method { font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; letter-spacing: .04em; }
 .ap402 .doc-method.get { background: var(--green-bg); color: var(--green); }
-.ap402 .doc-method.post { background: rgba(31, 122, 255, .14); color: #1f6ae0; }
+.ap402 .doc-method.post { background: var(--blue-100); color: var(--blue); }
 .ap402 .doc-path { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--ink); }
 .ap402 .intg-group { margin: 26px 0; }
 .ap402 .intg-cat { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding-bottom: 6px; border-bottom: 2px solid var(--border-strong); margin-bottom: 14px; }
