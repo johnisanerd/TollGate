@@ -19,6 +19,8 @@ import { ArcDeveloperConsoleWidget } from "../components/widgets/agora/ArcDevelo
 import { ArcMindCopyTradingWidget } from "../components/widgets/agora/ArcMindWidgets";
 import { ArcDiscoverWidget } from "../components/widgets/agora/ArcDiscoverWidget";
 import { ArcAgentDetailWidget } from "../components/widgets/agora/ArcAgentDetailWidget";
+import { CrossChainMirrorModal } from "../components/widgets/agora/CrossChainMirrorModal";
+import type { VaultSummary } from "../lib/hyperliquid";
 import { slugifyTab } from "../components/ui/AppSidebar";
 import { DocsPage, IntegrationsPage } from "../components/docs";
 import type { WorkspaceOutletContext } from "../layouts/AppLayout";
@@ -36,19 +38,23 @@ function AgoraControlTab({
 }) {
   const navigate = useNavigate();
   const [search] = useSearchParams();
+  const [mirrorVault, setMirrorVault] = useState<VaultSummary | null>(null);
   const tab = tabLabel.toLowerCase();
 
   if (tab === "docs" || tab === "documentation") return <DocsPage workspace={workspace} />;
   if (tab === "integrations" || tab.includes("integration")) return <IntegrationsPage workspace={workspace} />;
   if (tab === "discover") {
     return (
-      <ArcDiscoverWidget
-        workspace={workspace}
-        onSelectAgent={(agentId) => navigate(`/app/${workspace.id}/agent?agent=${agentId}`)}
-        onMirror={(_vault) => {
-          alert("Cross-chain mirror via CCTP is coming in Phase 4. For now you can open the vault on hyperliquid.xyz directly.");
-        }}
-      />
+      <>
+        <ArcDiscoverWidget
+          workspace={workspace}
+          onSelectAgent={(agentId) => navigate(`/app/${workspace.id}/agent?agent=${agentId}`)}
+          onMirror={(vault) => setMirrorVault(vault)}
+        />
+        {mirrorVault && (
+          <CrossChainMirrorModal vault={mirrorVault} onClose={() => setMirrorVault(null)} />
+        )}
+      </>
     );
   }
   if (tab === "agent") {
