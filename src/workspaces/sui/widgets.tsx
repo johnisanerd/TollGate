@@ -4,8 +4,9 @@ import type { Receipt } from "../../types";
 import { SuiDemoFlow, SuiLiveContractsPanel } from "./inline-widgets";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
-import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
-import { Bolt, Code, Star, Robot, Shield, Receipt as RIco } from "../../icons402";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx, OverviewCtx } from "../_types";
+import { Bolt, Code, Robot, Shield, Receipt as RIco } from "../../icons402";
+import { FileText } from "lucide-react";
 import {
   WalrusStorageWidget,
   MoveContractViewer,
@@ -53,7 +54,7 @@ export function cards({ onGoTab, onOpenPayment: _onOpenPayment, wsReceipts, def:
   return [
     { light: true, ico: Bolt, title: "Pin a blob to Walrus storage", sub: "decentralised · epoch-based · verifiable", onClick: () => { onGoTab("walrus") || onGoTab("storage"); } },
     { ico: Code, title: "Execute a Move PTB", sub: "dry-run or live · programmable tx blocks", onClick: () => { onGoTab("move") || onGoTab("contracts"); } },
-    { ico: Star, title: "Mint an agent NFT pass", sub: "Kiosk-compatible · tier-gated access", onClick: () => { onGoTab("nft") || onGoTab("market"); } },
+    { ico: FileText, title: "Mint an agent NFT pass", sub: "Kiosk-compatible · tier-gated access", onClick: () => { onGoTab("nft") || onGoTab("market"); } },
     { ico: Shield, title: "Generate a zkLogin proof", sub: "OAuth → Sui wallet · no seed phrase", onClick: () => { onGoTab("wallet") || onGoTab("agent"); } },
     { ico: Robot, title: "Sui Economy Agent settings", sub: "daily limit $10 · auto-pay on", onClick: () => { onGoTab("agent"); } },
     { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} Sui payments`, onClick: () => { onGoReceipts(); } },
@@ -118,7 +119,8 @@ function SuiEcosystemLinks() {
   return <EcosystemLinksPanel groups={groups} network={isTestnet ? "Sui Testnet" : "Sui Mainnet"} accent="#6FBCF0" />;
 }
 
-export function renderOverviewExtra(workspace: Workspace, onGoTab: (t: string) => boolean, onGoReceipts: () => void): ReactNode | null {
+export function renderOverviewExtra(ctx: OverviewCtx): ReactNode | null {
+  const { workspace, onGoTab, onGoReceipts } = ctx;
   return (
     <>
       <SuiDemoFlow workspace={workspace} onGoTab={onGoTab} onGoReceipts={onGoReceipts} />

@@ -61,6 +61,9 @@ export type CardDef = {
   link?: string;
   onLink?: () => void;
   onClick: () => void;
+  accent?: string;
+  metric?: string;
+  detail?: string;
 };
 
 export type CardCtx = {

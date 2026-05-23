@@ -1,9 +1,9 @@
 import { type ReactNode, useState, useEffect, useRef, useCallback } from "react";
-import { TrendingUp, Brain, Copy, Zap, ShieldCheck, Activity, Shield, Clock, Bell, BellOff, AlertTriangle, Plus, Trash2 } from "lucide-react";
+import { TrendingUp, Brain, Copy, Zap, ShieldCheck, Activity, Shield, Clock, Bell, BellOff, AlertTriangle, Plus, Trash2, CircleDollarSign } from "lucide-react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
-import { Receipt as RIco } from "../../icons402";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx, OverviewCtx } from "../_types";
+import { Code, Robot, Receipt as RIco } from "../../icons402";
 import { getAgoraConfig, getArcAgentStats } from "../../lib/agora";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { useLocalStore } from "../../lib/storage";
@@ -43,43 +43,12 @@ export function cards({
   onGoReceipts,
 }: CardCtx & { onGoReceipts: () => void }): CardDef[] {
   return [
-    {
-      light: true,
-      ico: Shield,
-      title: "Start Control Layer",
-      sub: "Create budget, choose policy, approve agent actions",
-      onClick: () => onGoTab("Start"),
-    },
-    {
-      ico: Zap,
-      title: "Fund Agent Budget",
-      sub: "Daily cap, max per call, allowed sources/actions",
-      onClick: () => onGoTab("Agent Budget"),
-    },
-    {
-      ico: Activity,
-      title: "Inspect Sources",
-      sub: "Market, OI, prediction, social and leader feed status",
-      onClick: () => onGoTab("Sources"),
-    },
-    {
-      ico: Brain,
-      title: "Decision Room",
-      sub: "Approve, reject or automate a policy-gated action",
-      onClick: () => onGoTab("Decision Room"),
-    },
-    {
-      ico: TrendingUp,
-      title: "Manage Positions",
-      sub: "Reduce, close, settle or withdraw user capital",
-      onClick: () => onGoTab("Positions"),
-    },
-    {
-      ico: RIco,
-      title: "View receipts",
-      sub: `${wsReceipts.length} user actions and payment proofs`,
-      onClick: () => onGoReceipts(),
-    },
+    { light: true, ico: TrendingUp, title: "Run cross-chain arb route", sub: "ETH/USDC gap Arc vs Base · $0.05 · CCTP", metric: "CCTP route", detail: "Arc vs Base", accent: "#22d3ee", onClick: () => onGoTab("arbitrage") || onGoTab("arb") },
+    { ico: CircleDollarSign, title: "Adaptive portfolio rebalancer", sub: "multi-asset · USDC settlement · Paymaster", metric: "Risk-off", detail: "USDC/USYC", accent: "#10b981", onClick: () => onGoTab("portfolio") },
+    { ico: Zap, title: "Paid reasoning proof unlock", sub: "x402 → USDC → trace receipt", metric: "$0.01", detail: "proof", accent: "#f59e0b", onClick: () => onGoTab("reasoning") },
+    { ico: Robot, title: "Kill Switch safety policy", sub: "drawdown threshold · pause · stop", metric: "Risk cap", detail: "15%", accent: "#8b5cf6", onClick: () => onGoTab("kill") },
+    { ico: Code, title: "App Kit settlement console", sub: "Balance · Bridge · Swap · Send", metric: "Circle stack", detail: "Arc tools", accent: "#3b82f6", onClick: () => onGoTab("app kit") },
+    { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} Arc payments`, metric: `${wsReceipts.length}`, detail: "receipts", accent: "#fb7185", onClick: () => onGoReceipts() },
   ];
 }
 
@@ -813,11 +782,8 @@ function ArcRevenueWidget() {
 }
 
 // в”Ђв”Ђ Overview extra в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-export function renderOverviewExtra(
-  workspace: Workspace,
-  onGoTab: (t: string) => boolean,
-  _onGoReceipts: () => void,
-): ReactNode | null {
+export function renderOverviewExtra(ctx: OverviewCtx): ReactNode | null {
+  const { workspace, onGoTab } = ctx;
   return (
     <>
       <ArcControlStartWidget workspace={workspace} onGoTab={onGoTab} />

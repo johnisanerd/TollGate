@@ -19,7 +19,6 @@ import {
   Loader2,
   MessageCircle,
   Plus,
-  ReceiptText,
   Send,
   Shield,
   Wallet,
@@ -31,7 +30,8 @@ import { useLocalStore } from "../../lib/storage";
 import { deterministicScore, hashId } from "../../lib/util-hash";
 import { makeTxHash } from "../../data";
 import type { Receipt, Service, Workspace } from "../../types";
-import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx, OverviewCtx } from "../_types";
+import { Robot, Receipt as RIco } from "../../icons402";
 
 // ---------------------------------------------------------------------------
 // Re-exports from widget sub-files (also imported into scope for renderTab)
@@ -890,14 +890,14 @@ export const signature: SigBlock = {
 // ---------------------------------------------------------------------------
 
 export function cards(ctx: CardCtx): CardDef[] {
-  const { onGoTab, wsReceipts } = ctx;
+  const { onGoTab, wsReceipts, onGoReceipts } = ctx;
   return [
     { light: true, ico: Zap, title: "Create a payment link", sub: "hosted 402 endpoint agents can pay", onClick: () => onGoTab("checkout") },
     { ico: FileText, title: "Query QIEDEX pool data", sub: "depth · fees · TWAP · per-query pricing", onClick: () => onGoTab("qiedex") || onGoTab("dex") },
     { ico: Shield, title: "Issue & verify QIE Pass", sub: "gated access · gold / silver tiers", onClick: () => onGoTab("pass") },
-    { ico: Bot, title: "Manage Merchant Bot agent", sub: "daily limit $6 · auto-pay on", onClick: () => onGoTab("wallet") || onGoTab("agent") },
+    { ico: Robot, title: "Manage Merchant Bot agent", sub: "daily limit $6 · auto-pay on", onClick: () => onGoTab("wallet") || onGoTab("agent") },
     { ico: Code, title: "QIE x402 integration docs", sub: "cURL · SDK · rail adapters", onClick: () => onGoTab("gateway") },
-    { ico: ReceiptText, title: "Merchant dashboard & payouts", sub: `${wsReceipts.length} receipts · next payout Fri`, onClick: () => onGoTab("merchant") },
+    { ico: RIco, title: "Merchant dashboard & payouts", sub: `${wsReceipts.length} receipts · next payout Fri`, onClick: () => onGoTab("merchant") || onGoReceipts() },
   ];
 }
 
@@ -999,7 +999,7 @@ function QieEcosystemLinks() {
   return <EcosystemLinksPanel groups={groups} network={isTestnet ? "QIE Testnet · chainId 1983" : "QIE Mainnet · chainId 1990"} accent="#7c3aed" />;
 }
 
-export function renderOverviewExtra(_ws: Workspace): ReactNode {
+export function renderOverviewExtra(_ctx: OverviewCtx): ReactNode {
   return (
     <>
     <div style={{ background: "var(--bg-2)", borderRadius: 14, border: "1px solid var(--line-2)", overflow: "hidden" }}>

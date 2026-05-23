@@ -6,8 +6,9 @@ export { ArbAddressBook, ArbRecurringPayments, ArbAllowanceManager, ArbContractP
 import type { ReactNode } from "react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
-import { Send, Shield, Globe, Robot, Lock, Receipt as RIco } from "../../icons402";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx, OverviewCtx } from "../_types";
+import { Send, Shield, Robot, Receipt as RIco } from "../../icons402";
+import { Network, ShieldCheck } from "lucide-react";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { DiscoveryWidget } from "../../components/widgets/DiscoveryWidget";
 import { MerchantWidget } from "../../components/widgets/MerchantWidget";
@@ -37,9 +38,9 @@ export function cards({ onGoTab, onOpenPayment: _onOpenPayment, wsReceipts, def:
   return [
     { light: true, ico: Send, title: "Send USDC on Arbitrum", sub: "live ERC-20 transfer · testnet USDC", onClick: () => { onGoTab("stablecoin") || onGoTab("payment"); } },
     { ico: Shield, title: "Create & manage escrow", sub: "release or refund on delivery proof", onClick: () => { onGoTab("escrow"); } },
-    { ico: Globe, title: "Monitor Orbit chains", sub: "sequencer · bridge health · batch lag", onClick: () => { onGoTab("orbit"); } },
+    { ico: Network, title: "Monitor Orbit chains", sub: "sequencer · bridge health · batch lag", onClick: () => { onGoTab("orbit"); } },
     { ico: Robot, title: "Treasury Agent budget policy", sub: "daily limit $12 · spend caps", onClick: () => { onGoTab("agent"); } },
-    { ico: Lock, title: "Configure risk rules", sub: "spend caps · allowlists · enforced server-side", onClick: () => { onGoTab("risk"); } },
+    { ico: ShieldCheck, title: "Configure risk rules", sub: "spend caps · allowlists · enforced server-side", onClick: () => { onGoTab("risk"); } },
     { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} settled payments`, onClick: () => { onGoReceipts(); } },
   ];
 }
@@ -165,7 +166,7 @@ function ArbEcosystemLinks() {
   return <EcosystemLinksPanel groups={groups} network={isTestnet ? "Arbitrum Sepolia · chainId 421614" : "Arbitrum One · chainId 42161"} accent="#5C7CFF" />;
 }
 
-export function renderOverviewExtra(_workspace: Workspace, _onGoTab: (t: string) => boolean, _onGoReceipts: () => void): ReactNode | null {
+export function renderOverviewExtra(_ctx: OverviewCtx): ReactNode | null {
   return (
     <>
       <div style={{ background: "var(--bg-2)", borderRadius: 14, border: "1px solid var(--line-2)", overflow: "hidden" }}>

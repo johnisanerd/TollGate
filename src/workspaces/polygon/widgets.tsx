@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
-import { Bolt, Link as LinkIco, Send, Robot, Shield, Receipt as RIco } from "../../icons402";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx, OverviewCtx } from "../_types";
+import { Bolt, Send, Robot, Receipt as RIco } from "../../icons402";
+import { FileText, ShieldCheck } from "lucide-react";
 import { fmtUsd, badgeFor } from "../../lib/ws-helpers";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
@@ -53,7 +54,7 @@ export function cards({
       onClick: () => { onGoTab("merchant"); },
     },
     {
-      ico: LinkIco,
+      ico: FileText,
       title: "Tokenise a trade invoice",
       sub: "90% advance · USDC on Polygon zkEVM",
       onClick: () => { onGoTab("trade") || onGoTab("finance"); },
@@ -71,7 +72,7 @@ export function cards({
       onClick: () => { onGoTab("agent"); },
     },
     {
-      ico: Shield,
+      ico: ShieldCheck,
       title: "Agent marketplace discovery",
       sub: "find & pay Polygon services via x402",
       onClick: () => { onGoTab("marketplace") || onGoTab("discovery"); },
@@ -165,11 +166,7 @@ function PolygonEcosystemLinks() {
   return <EcosystemLinksPanel groups={groups} network={isTestnet ? "Polygon zkEVM Cardona Testnet" : "Polygon zkEVM Mainnet · chainId 1101"} accent="#8247E5" />;
 }
 
-export function renderOverviewExtra(
-  _workspace: Workspace,
-  _onGoTab: (t: string) => boolean,
-  _onGoReceipts: () => void,
-): ReactNode | null {
+export function renderOverviewExtra(_ctx: OverviewCtx): ReactNode | null {
   return <PolygonEcosystemLinks />;
 }
 

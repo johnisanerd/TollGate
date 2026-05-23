@@ -10,10 +10,11 @@ import { TreasuryPanel } from "./TreasuryPanel";
 import { MNT_FUNDING_SCOPE, MNT_TREASURY_TOPUP_USD } from "./funding";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx, OverviewCtx } from "../_types";
 import { DiscoveryWidget } from "../../components/widgets/DiscoveryWidget";
 import { MerchantWidget } from "../../components/widgets/MerchantWidget";
-import { ArrowUpRight, Bell, Database, Robot, Bolt, Receipt as RIco } from "../../icons402";
+import { Database, Robot, Receipt as RIco } from "../../icons402";
+import { TrendingUp, Radio, FileText, Zap } from "lucide-react";
 import { MantleAgentIdentity, MantleVaultPanel, MantleBudgetPanel } from "../../components/widgets/mantle/MantleOnchain";
 import { AgentCreditLine } from "../../components/widgets/mantle-extra/MantleExtraWidgets";
 import { MantleEarnCalc, MantleAgentEconomyDashboard, MantlePortfolioRebalancer, MantleGasOptimizer, AlphaDesk, RwaRegistry, MantleEconomyLoop, YieldBoard, MantleDevToolsPanel } from "./inline-widgets";
@@ -43,11 +44,11 @@ export const signature: SigBlock = {
 
 export function cards({ onGoTab, onOpenPayment: _onOpenPayment, wsReceipts, def: _def, onGoReceipts }: CardCtx & { onGoReceipts: () => void }): CardDef[] {
   return [
-    { light: true, ico: ArrowUpRight, title: "Run a strategy backtest", sub: "mETH · USDY · T-BILL · $0.15 / run", onClick: () => onGoTab("strategy") || onGoTab("sandbox") },
-    { ico: Bell, title: "Browse the alpha feed", sub: "AI-scored signals · confidence 68-91%", onClick: () => onGoTab("alpha") },
-    { ico: Database, title: "Fetch RWA risk data", sub: "basket · grade · duration · APY", onClick: () => onGoTab("rwa") },
+    { light: true, ico: TrendingUp, title: "Run a strategy backtest", sub: "mETH · USDY · T-BILL · $0.15 / run", onClick: () => onGoTab("strategy") || onGoTab("sandbox") },
+    { ico: Radio, title: "Browse the alpha feed", sub: "AI-scored signals · confidence 68-91%", onClick: () => onGoTab("alpha") },
+    { ico: FileText, title: "Fetch RWA risk data", sub: "basket · grade · duration · APY", onClick: () => onGoTab("rwa") },
     { ico: Robot, title: "Manage Alpha Strategist agent", sub: "daily limit $15 · auto-pay on", onClick: () => onGoTab("wallet") || onGoTab("agent") },
-    { ico: Bolt, title: "mETH / USDY yield signals", sub: "rotation suggestion · rebalance band", onClick: () => onGoTab("meth") || onGoTab("yield") },
+    { ico: Zap, title: "mETH / USDY yield signals", sub: "rotation suggestion · rebalance band", onClick: () => onGoTab("meth") || onGoTab("yield") },
     { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} paid strategy runs`, onClick: () => onGoReceipts() },
   ];
 }
@@ -171,7 +172,7 @@ function MantleEcosystemLinks() {
   return <EcosystemLinksPanel groups={groups} network={isTestnet ? "Mantle Sepolia Testnet" : "Mantle Mainnet · chainId 5000"} accent="#1A9AFF" />;
 }
 
-export function renderOverviewExtra(_workspace: Workspace, _onGoTab: (t: string) => boolean, _onGoReceipts: () => void): ReactNode | null {
+export function renderOverviewExtra(_ctx: OverviewCtx): ReactNode | null {
   return (
     <>
       <div style={{ background: "var(--bg-2)", borderRadius: 14, border: "1px solid var(--line-2)", overflow: "hidden" }}>

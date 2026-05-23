@@ -7,11 +7,12 @@ export { OgIntegrationStatus } from "../../components/widgets/og-extra/OgIntegra
 import type { ReactNode } from "react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx, OverviewCtx } from "../_types";
 import { DiscoveryWidget } from "../../components/widgets/DiscoveryWidget";
 import { MerchantWidget } from "../../components/widgets/MerchantWidget";
 import { SealedPayloadVault } from "./inline-widgets";
-import { Bolt, Database, Shield, Robot, Code, Receipt as RIco } from "../../icons402";
+import { Bolt, Shield, Robot, Code, Receipt as RIco } from "../../icons402";
+import { FileText } from "lucide-react";
 import { InferenceJobRunner } from "../../components/widgets/zero-g/InferenceJobRunner";
 import { StoragePinWidget } from "../../components/widgets/zero-g/StoragePinWidget";
 import { ProofVerifier } from "../../components/widgets/zero-g/ProofVerifier";
@@ -42,6 +43,8 @@ import {
   OgMultiSigApprove,
   OgBudgetControllerWidget,
   OgStorageHistory,
+  EconomyDashboard,
+  OgDemoFlow,
 } from "./inline-widgets";
 
 export const signature: SigBlock = {
@@ -60,7 +63,7 @@ export const signature: SigBlock = {
 export function cards({ onGoTab, onOpenPayment, wsReceipts, def, onGoReceipts }: CardCtx & { onGoReceipts: () => void }): CardDef[] {
   return [
     { light: true, ico: Bolt, title: "Run an inference job", sub: "pay per token · Risk Scorer · Llama 3 · Anomaly", onClick: () => { if (def) onOpenPayment(def); } },
-    { ico: Database, title: "Pin a memory blob to 0G Storage", sub: "SHA-256 hash · verifiable reference", onClick: () => onGoTab("storage") },
+    { ico: FileText, title: "Pin a memory blob to 0G Storage", sub: "SHA-256 hash · verifiable reference", onClick: () => onGoTab("storage") },
     { ico: Shield, title: "Verify a receipt proof", sub: "single-use · replay-safe · sealed", onClick: () => onGoTab("privacy") },
     { ico: Robot, title: "Manage agent budgets & allowlist", sub: "0G Compute Agent · daily cap $8.00", onClick: () => onGoTab("agent") },
     { ico: Code, title: "0G x402 SDK & gateway docs", sub: "cURL · TypeScript · Python adapters", onClick: () => onGoTab("gateway") || onGoTab("privacy") },
@@ -141,9 +144,12 @@ function OgEcosystemLinks() {
   return <EcosystemLinksPanel groups={groups} network={isTestnet ? "0G Testnet · Galileo" : "0G Galileo · chainId 16602"} accent="#3b82f6" />;
 }
 
-export function renderOverviewExtra(_workspace: Workspace, _onGoTab: (t: string) => boolean, _onGoReceipts: () => void): ReactNode | null {
+export function renderOverviewExtra(ctx: OverviewCtx): ReactNode | null {
+  const { workspace, onGoTab, onGoReceipts } = ctx;
   return (
     <>
+      <EconomyDashboard />
+      <OgDemoFlow workspace={workspace} onGoTab={onGoTab} onGoReceipts={onGoReceipts} />
       <OgSlashingAlert />
       <OgBlockExplorerEmbed />
       <OgLiveContractsPanel />
