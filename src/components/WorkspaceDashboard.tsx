@@ -1,4 +1,4 @@
-﻿import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   BookOpen,
@@ -59,56 +59,49 @@ import { InferenceJobRunner } from "./widgets/zero-g/InferenceJobRunner";
 import { StoragePinWidget } from "./widgets/zero-g/StoragePinWidget";
 import { ProofVerifier } from "./widgets/zero-g/ProofVerifier";
 import { MantleAgentIdentity, MantleVaultPanel, MantleBudgetPanel } from "./widgets/mantle/MantleOnchain";
-import { ArbitrumEscrowPanel } from "./widgets/arbitrum/ArbitrumEscrowPanel";
-import {
-  WalrusStorageWidget,
-  MoveContractViewer,
-  SuiNftMarket,
-  ZkLoginPanel,
-  SuiAgentWalletPanel,
-  SuiAgentEconomyLoop,
-  DeepBookYieldEscrow,
-  AgentNftReputation,
-  SuiPayButtonWidget,
-  AgentMemoryNetwork,
-  BattleArenaWidget,
-  IntentEngineWidget,
-} from "./widgets/sui/SuiWidgets";
-import { OpenClawSkillConsole, TeeAttestationVerifier, DePinBulkPin } from "./widgets/og-extra/OgExtraWidgets";
-import { OgIntegrationStatus } from "./widgets/og-extra/OgIntegrationStatus";
-// #16 Lazy-load MantleExtraWidgets to split this heavy bundle out of the main chunk.
+import { OpenClawSkillConsole } from "./widgets/og-extra/OgExtraWidgets";
+// #16 Lazy-load MantleExtraWidgets — AgentCreditLine used in AgentsPage
 const _mew = () => import("./widgets/mantle-extra/MantleExtraWidgets");
-const StrategyDeployPanel   = lazy(() => _mew().then((m) => ({ default: m.StrategyDeployPanel })));
-const YieldProjectionCalc   = lazy(() => _mew().then((m) => ({ default: m.YieldProjectionCalc })));
-const WhaleAlertFeed        = lazy(() => _mew().then((m) => ({ default: m.WhaleAlertFeed })));
-const CreditScoreMeter      = lazy(() => _mew().then((m) => ({ default: m.CreditScoreMeter })));
-const AlphaBotWidget        = lazy(() => _mew().then((m) => ({ default: m.AlphaBotWidget })));
 const AgentCreditLine       = lazy(() => _mew().then((m) => ({ default: m.AgentCreditLine })));
-const AgentBudgetDashboard  = lazy(() => _mew().then((m) => ({ default: m.AgentBudgetDashboard })));
-const YieldComparisonWidget = lazy(() => _mew().then((m) => ({ default: m.YieldComparisonWidget })));
-const MantleA2ALoopWidget   = lazy(() => _mew().then((m) => ({ default: m.MantleA2ALoopWidget })));
-import { BatchPayoutConsole, StylusSnippetViewer, RobinhoodChainPanel } from "./widgets/arbitrum-extra/ArbitrumExtraWidgets";
-import { AgentIntentWidget } from "./widgets/arbitrum-extra/AgentIntentWidget";
-import { ArbAddressBook, ArbRecurringPayments, ArbAllowanceManager, ArbContractPaymentSim, ArbPaymentFlowDiagram, UsdcTransferWidget, AgentServiceRegistry, SpendRulesEditor, ArbitrumStylusDeployPanel, ArbBudgetPanel, ArbOnChainRegistry, ArbDisputePanel, ArbAgentReputation } from "../workspaces/arbitrum/inline-widgets";
-import { EconomyDashboard, OgDemoFlow, OgStorageEstimator, OgComputeCostChart, OgSocialFeedWidget, OgComputeKanban, OgPrivacyStepper, OgAgentToAgentLoop, OgTradingArenaWidget, AgentIdRegistry, RevenueSplitConsole, OgAllowlistManager, OgMultiSigApprove, OgBudgetControllerWidget } from "../workspaces/0g/inline-widgets";
-import { MantleEarnCalc, MantleAgentEconomyDashboard, MantlePortfolioRebalancer, MantleGasOptimizer, AlphaDesk, RwaRegistry, MantleEconomyLoop, YieldBoard, MantleDevToolsPanel } from "../workspaces/mantle/inline-widgets";
-import { QieBillSplitter, QieRequestPay, QieWalletDashboard, QieCreatorSubscriptions, QieSalesAnalytics, QiePassIssuer, QieCreatorTipsWidget, AgentWalletConsole, QieCreditWidget, QieOracleFeedWidget } from "../workspaces/qie/widgets";
-import { QiePosWidget, GameItemShop, MerchantPayoutsPanel } from "./widgets/qie-extra/QieExtraWidgets";
+import { AgentIdRegistry, RevenueSplitConsole, OgMultiSigApprove, OgBudgetControllerWidget } from "../workspaces/0g/inline-widgets";
+import { MantleEconomyLoop } from "../workspaces/mantle/inline-widgets";
+import { AgentWalletConsole } from "../workspaces/qie/widgets";
 import { A2AMarketplaceWidget } from "./widgets/A2AMarketplaceWidget";
 import { MerchantWidget } from "./widgets/MerchantWidget";
 import { DiscoveryWidget } from "./widgets/DiscoveryWidget";
 import { BudgetWidget } from "./widgets/BudgetWidget";
 import { AgentScoreCard } from "./widgets/AgentScoreBadge";
-import { AgoraTradingWidget } from "./widgets/agora/AgoraTradingWidget";
-import { AgoraPortfolioWidget, AgoraCircleToolsWidget, AgoraX402Widget, AgoraLeaderboardWidget, AgoraCctpWidget, ArcAppKitWidget, ArcMindSwapWidget, ArcMindYieldWidget } from "./widgets/agora/AgoraExtraWidgets";
-import { PolygonTradeFinanceWidget, PolygonUsdcPaymentsWidget, PolygonAgentMarketplaceWidget, PolygonStatsWidget, PolygonMerchantOnboardingWidget } from "./widgets/polygon/PolygonWidgets";
-import { ArcMindCopyTradingWidget, ArcMindReasoningWidget, ArcMindSignalHubWidget, ArcMindKillSwitchWidget, ArcMindPnLWidget, ArcMindDebateWidget, ArcDecisionLogWidget } from "./widgets/agora/ArcMindWidgets";
 import * as api from "../lib/api";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { runOgInference, anchorReceiptOnChain, isOgRegistryConfigured, getOgConfig, ogExplorerTxUrl, ogExplorerAddrUrl, uploadToOgStorage } from "../lib/og";
 import { explorerTxForNetwork } from "../lib/chains";
 import { AgentScoreComparison } from "./widgets/AgentScoreBadge";
 import { vaultRecordDecision, isMantleVaultConfigured, mantleExplorerTxUrl } from "../lib/mantle";
+import type { TabCtx, OverviewCtx, TabMeta, CardCtx, CardDef as WsCardDef } from "../workspaces/_types";
+import * as ogWidgets from "../workspaces/0g/widgets";
+import * as agoraWidgets from "../workspaces/agora/widgets";
+import * as arbitrumWidgets from "../workspaces/arbitrum/widgets";
+import * as mantleWidgets from "../workspaces/mantle/widgets";
+import * as suiWidgets from "../workspaces/sui/widgets";
+import * as qieWidgets from "../workspaces/qie/widgets";
+import * as polygonWidgets from "../workspaces/polygon/widgets";
+
+type WsModule = {
+  tabMeta(tab: string): TabMeta | null;
+  renderTabContent(tab: string, ctx: TabCtx): ReactNode;
+  renderOverviewExtra(ctx: OverviewCtx): ReactNode | null;
+  cards(ctx: CardCtx & { onGoReceipts: () => void }): WsCardDef[];
+};
+
+const WS_MODULES: Record<WorkspaceId, WsModule> = {
+  "0g": ogWidgets,
+  agora: agoraWidgets,
+  arbitrum: arbitrumWidgets,
+  mantle: mantleWidgets,
+  sui: suiWidgets,
+  qie: qieWidgets,
+  polygon: polygonWidgets,
+};
 
 type WorkspaceDashboardProps = {
   agent: Agent;
@@ -190,7 +183,7 @@ export function pageKind(tab: string, index: number): "overview" | "agents" | "r
   if (t.includes("integration")) return "integrations";
   if (t.includes("gateway") || t.includes("explainer") || t.includes("debugger") || t.includes("playground") || t.includes("sdk")) return "gateway";
   if (t.includes("ai services") || t.includes("agent services")) return "service";
-  if (t.includes("agent identity") || t.includes("agent wallet") || t.includes("agent marketplace") || t.includes("agent economy") || t.includes("agent arena") || t.includes("agent credit") || t.includes("budget dashboard") || t.includes("qie wallet")) return "service";
+  if (t.includes("agent identity") || t.includes("agent wallet") || t.includes("agent marketplace") || t.includes("agent economy") || t.includes("agent arena") || t.includes("agent credit") || t.includes("budget dashboard") || t.includes("qie wallet") || t.includes("agent engine") || t.includes("agent arena")) return "service";
   if (t.includes("wallet protection")) return "verify";
   if (t.includes("approval")) return "agents";
   if (t.includes("merchant dashboard") || t.includes("receipt") || t.includes("invoice") || t.includes("ledger") || t.includes("subscription")) return "receipts";
@@ -389,25 +382,6 @@ export function CreateServiceModal({
 }
 
 
-const OVERVIEW_CLASS: Record<WorkspaceId, string> = {
-  "0g": "zero-g",
-  qie: "qie",
-  arbitrum: "arbitrum",
-  mantle: "mantle",
-  sui: "sui",
-  agora: "agora",
-  polygon: "polygon",
-};
-
-const OVERVIEW_ACCENTS: Record<WorkspaceId, string[]> = {
-  "0g": ["#8b5cf6", "#22d3ee", "#f59e0b", "#34d399", "#f472b6", "#a78bfa", "#38bdf8"],
-  qie: ["#00c389", "#facc15", "#38bdf8", "#fb7185", "#a3e635", "#2dd4bf", "#f97316"],
-  arbitrum: ["#1b4add", "#28a0f0", "#f97316", "#60a5fa", "#22c55e", "#818cf8", "#38bdf8"],
-  mantle: ["#0fbf7a", "#f4c542", "#22d3ee", "#a3e635", "#fb923c", "#34d399", "#84cc16"],
-  sui: ["#4da2ff", "#7dd3fc", "#a78bfa", "#22d3ee", "#f0abfc", "#60a5fa", "#38bdf8"],
-  agora: ["#1652f0", "#22d3ee", "#10b981", "#f59e0b", "#8b5cf6", "#fb7185", "#3b82f6"],
-  polygon: ["#7b3fe4", "#ec4899", "#f59e0b", "#22c55e", "#60a5fa", "#a855f7", "#14b8a6"],
-};
 
 export function OverviewPage({
   agent,
@@ -453,80 +427,10 @@ export function OverviewPage({
   }, [wsReceipts]);
   const topServices = useMemo(() => [...services].sort((a, b) => (svcRevMap.get(b.id) ?? 0) - (svcRevMap.get(a.id) ?? 0)).slice(0, 4), [services, svcRevMap]);
 
-  type CardDef = {
-    ico: React.ElementType<{ width?: number; height?: number }>;
-    title: string;
-    sub?: string;
-    light?: boolean;
-    link?: string;
-    onLink?: () => void;
-    onClick: () => void;
-    accent?: string;
-    metric?: string;
-    detail?: string;
-  };
-  const WS_CARDS: Partial<Record<WorkspaceId, CardDef[]>> = {
-    "0g": [
-      { light: true, ico: Bolt, title: "Run an inference job", sub: "pay per token · Risk Scorer · Llama 3 · Anomaly", onClick: () => def && onOpenPayment(def) },
-      { ico: FileText, title: "Pin a memory blob to 0G Storage", sub: "SHA-256 hash · verifiable reference", onClick: () => onGoTab("storage") },
-      { ico: Shield, title: "Verify a receipt proof", sub: "single-use · replay-safe · sealed", onClick: () => onGoTab("privacy") },
-      { ico: Robot, title: "Manage agent budgets & allowlist", sub: "0G Compute Agent · daily cap $8.00", onClick: () => onGoTab("agent") },
-      { ico: Code, title: "0G x402 SDK & gateway docs", sub: "cURL · TypeScript · Python adapters", onClick: () => onGoTab("gateway") || onGoTab("privacy") },
-      { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} paid jobs on record`, onClick: () => onGoReceipts() },
-    ],
-    qie: [
-      { light: true, ico: Bolt, title: "Create a payment link", sub: "hosted 402 endpoint agents can pay", onClick: () => onGoTab("checkout") },
-      { ico: FileText, title: "Query QIEDEX pool data", sub: "depth · fees · TWAP · per-query pricing", onClick: () => onGoTab("qiedex") || onGoTab("dex") },
-      { ico: Shield, title: "Issue & verify QIE Pass", sub: "gated access · gold / silver tiers", onClick: () => onGoTab("pass") },
-      { ico: Robot, title: "Manage Merchant Bot agent", sub: "daily limit $6 · auto-pay on", onClick: () => onGoTab("wallet") || onGoTab("agent") },
-      { ico: Code, title: "QIE x402 integration docs", sub: "cURL · SDK · rail adapters", onClick: () => onGoTab("gateway") },
-      { ico: RIco, title: "Merchant dashboard & payouts", sub: `${wsReceipts.length} receipts · next payout Fri`, onClick: () => onGoTab("merchant") || onGoReceipts() },
-    ],
-    arbitrum: [
-      { light: true, ico: Send, title: "Send USDC on Arbitrum", sub: "live ERC-20 transfer · testnet USDC", onClick: () => onGoTab("stablecoin") || onGoTab("payment") },
-      { ico: Shield, title: "Create & manage escrow", sub: "release or refund on delivery proof", onClick: () => onGoTab("escrow") },
-      { ico: Network, title: "Monitor Orbit chains", sub: "sequencer · bridge health · batch lag", onClick: () => onGoTab("orbit") },
-      { ico: Robot, title: "Treasury Agent budget policy", sub: "daily limit $12 · spend caps", onClick: () => onGoTab("agent") },
-      { ico: ShieldCheck, title: "Configure risk rules", sub: "spend caps · allowlists · enforced server-side", onClick: () => onGoTab("risk") },
-      { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} settled payments`, onClick: () => onGoReceipts() },
-    ],
-    mantle: [
-      { light: true, ico: TrendingUp, title: "Run a strategy backtest", sub: "mETH · USDY · T-BILL · $0.15 / run", onClick: () => onGoTab("strategy") || onGoTab("sandbox") },
-      { ico: Radio, title: "Browse the alpha feed", sub: "AI-scored signals · confidence 68-91%", onClick: () => onGoTab("alpha") },
-      { ico: FileText, title: "Fetch RWA risk data", sub: "basket · grade · duration · APY", onClick: () => onGoTab("rwa") },
-      { ico: Robot, title: "Manage Alpha Strategist agent", sub: "daily limit $15 · auto-pay on", onClick: () => onGoTab("wallet") || onGoTab("agent") },
-      { ico: Zap, title: "mETH / USDY yield signals", sub: "rotation suggestion · rebalance band", onClick: () => onGoTab("meth") || onGoTab("yield") },
-      { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} paid strategy runs`, onClick: () => onGoReceipts() },
-    ],
-    sui: [
-      { light: true, ico: Bolt, title: "Pin a blob to Walrus storage", sub: "decentralised · epoch-based · verifiable", onClick: () => onGoTab("walrus") || onGoTab("storage") },
-      { ico: Code, title: "Execute a Move PTB", sub: "dry-run or live · programmable tx blocks", onClick: () => onGoTab("move") || onGoTab("contracts") },
-      { ico: FileText, title: "Mint an agent NFT pass", sub: "Kiosk-compatible · tier-gated access", onClick: () => onGoTab("nft") || onGoTab("market") },
-      { ico: Shield, title: "Generate a zkLogin proof", sub: "OAuth → Sui wallet · no seed phrase", onClick: () => onGoTab("wallet") || onGoTab("agent") },
-      { ico: Robot, title: "Sui Economy Agent settings", sub: "daily limit $10 · auto-pay on", onClick: () => onGoTab("agent") },
-      { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} Sui payments`, onClick: () => onGoReceipts() },
-    ],
-    agora: [
-      { light: true, ico: TrendingUp, title: "Run cross-chain arb route", sub: "ETH/USDC gap Arc vs Base · $0.05 · CCTP", metric: "CCTP route", detail: "Arc vs Base", accent: "#22d3ee", onClick: () => onGoTab("arbitrage") || onGoTab("arb") },
-      { ico: CircleDollarSign, title: "Adaptive portfolio rebalancer", sub: "multi-asset · USDC settlement · Paymaster", metric: "Risk-off", detail: "USDC/USYC", accent: "#10b981", onClick: () => onGoTab("portfolio") },
-      { ico: Zap, title: "Paid reasoning proof unlock", sub: "x402 → USDC → trace receipt", metric: "$0.01", detail: "proof", accent: "#f59e0b", onClick: () => onGoTab("reasoning") },
-      { ico: Robot, title: "Kill Switch safety policy", sub: "drawdown threshold · pause · stop", metric: "Risk cap", detail: "15%", accent: "#8b5cf6", onClick: () => onGoTab("kill") },
-      { ico: Code, title: "App Kit settlement console", sub: "Balance · Bridge · Swap · Send", metric: "Circle stack", detail: "Arc tools", accent: "#3b82f6", onClick: () => onGoTab("app kit") },
-      { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} Arc payments`, metric: `${wsReceipts.length}`, detail: "receipts", accent: "#fb7185", onClick: () => onGoReceipts() },
-    ],
-    polygon: [
-      { light: true, ico: Zap, title: "Publish a paid API in 30 sec", sub: "paste endpoint · get TollGate URL · earn USDC", onClick: () => onGoTab("merchant") },
-      { ico: FileText, title: "Tokenise a trade invoice", sub: "90% advance · USDC on Polygon zkEVM", onClick: () => onGoTab("trade") || onGoTab("finance") },
-      { ico: Send, title: "Cross-border remittance", sub: "AED ↔ USDC · UAE corridors · $0.05/call", onClick: () => def && onOpenPayment(def) },
-      { ico: Robot, title: "Polygon Merchant Agent settings", sub: "daily limit $15 · auto-pay on", onClick: () => onGoTab("agent") },
-      { ico: ShieldCheck, title: "Agent marketplace discovery", sub: "find & pay Polygon services via x402", onClick: () => onGoTab("marketplace") || onGoTab("discovery") },
-      { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} Polygon payments`, onClick: () => onGoReceipts() },
-    ],
-  };
   // Primary one-click x402 -> pay -> unlock action for each workspace.
   // Prepended to every workspace's tile set; the per-workspace first card loses its
   // `light` accent so there's a single clear primary CTA.
-  const paidAgentCard: CardDef = {
+  const paidAgentCard: WsCardDef = {
     light: true,
     ico: Bolt,
     title: "▶ Run paid agent",
@@ -538,16 +442,17 @@ export function OverviewPage({
     onLink: () => workspace.id === "agora" ? onGoTab("app kit") : onGoTab("gateway"),
     onClick: () => def && onOpenPayment(def),
   };
-  const wsCards = (WS_CARDS[workspace.id] ?? [
-    { ico: Plus, title: "Create a paid API endpoint", sub: `${services.length} services live in this workspace`, onClick: () => onGoTab("data") || onGoTab("checkout") || onGoTab("trading") },
-    { ico: RIco, title: "Pay & manage receipts", sub: `${wsReceipts.length} on record`, onClick: () => onGoTab("payment") || onGoTab("receipt") },
-    { ico: Robot, title: "Manage agent budgets", sub: `1 agent · daily & per-request caps`, onClick: () => onGoTab("wallet") || onGoTab("agent") },
-    { ico: Code, title: "x402 Gateway & SDK", sub: "Docs · middleware · adapters", onClick: () => onGoTab("gateway") || onGoTab("data") },
-    { ico: Shield, title: "Verify a payment proof", sub: "Replay-safe · single-use", onClick: () => onGoTab("gateway") || onGoTab("data") },
-  ]).map((c, i) => (i === 0 ? { ...c, light: false } : c));
-  const cards: CardDef[] = [paidAgentCard, ...wsCards];
-  const overviewClass = OVERVIEW_CLASS[workspace.id];
-  const overviewAccents = OVERVIEW_ACCENTS[workspace.id];
+  const cardCtx: CardCtx & { onGoReceipts: () => void } = {
+    onGoTab,
+    onOpenPayment,
+    wsReceipts,
+    def,
+    onGoReceipts,
+  };
+  const wsCards = WS_MODULES[workspace.id].cards(cardCtx).map((c, i) => (i === 0 ? { ...c, light: false } : c));
+  const cards: WsCardDef[] = [paidAgentCard, ...wsCards];
+  const overviewClass = workspace.overviewClass;
+  const overviewAccents = workspace.overviewAccents;
 
   return (
     <div className={`overview-window overview-window--${overviewClass}`}>
@@ -565,8 +470,7 @@ export function OverviewPage({
         {workspace.pitch}
       </LedeHead>
 
-      {workspace.id === "0g" && <EconomyDashboard />}
-      {workspace.id === "0g" && <OgDemoFlow workspace={workspace} onGoTab={onGoTab} onGoReceipts={onGoReceipts} />}
+      {WS_MODULES[workspace.id].renderOverviewExtra({ workspace, onGoTab, onGoReceipts })}
 
       <div className={`action-grid workspace-action-grid workspace-action-grid--${overviewClass} mb`}>
         {cards.map((c, i) => {
@@ -874,88 +778,13 @@ type ProductTabCopy = {
 };
 
 function productTabCopy(workspace: Workspace, tabLabel: string, fallbackTitle: string, fallbackSub: string): ProductTabCopy {
-  const t = tabLabel.toLowerCase();
-  const base = {
+  const base: ProductTabCopy = {
     title: fallbackTitle,
     sub: fallbackSub,
     intent: "Workflow",
     proof: `${workspace.shortName} settlement`,
   };
-
-  if (workspace.id === "agora") {
-    if (t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard")) return { title: "Decision Guard", sub: "Live market sources, debate, PnL and decision logs for HOLD, REDUCE or ALLOW actions on Arc.", intent: "RFB 02 / 03", proof: "sourced signals + Arc receipts" };
-    if (t.includes("reasoning") || t.includes("trace")) return { title: "Reasoning trace marketplace", sub: "Inspect the evidence, confidence shift and source contribution behind each agent decision.", intent: "RFB 06", proof: "trace hash + paid unlock" };
-    if (t.includes("copy")) return { title: "Copy ArcMind strategy", sub: "Start, pause, withdraw and settle a copy session from ArcMind's ETH/USDC decisions. No backtest fee is charged here.", intent: "RFB 06", proof: "copy controls + risk rules" };
-    if (t.includes("kill")) return { title: "Autonomous risk kill switch", sub: "Configure drawdown, liquidation and source-divergence protections before the agent keeps trading.", intent: "RFB 01", proof: "Telegram + Arc action trail" };
-    if (t.includes("usyc") || t.includes("yield") || t.includes("swap") || t.includes("risk-off") || t.includes("vault")) return { title: "Risk-off capital router", sub: "Move idle capital between USDC, USYC and swap routes when the agent detects hostile conditions.", intent: "RFB 04", proof: "USDC denominated settlement" };
-    if (t.includes("arbitrage") || t.includes("arb") || t.includes("engine")) return { title: "Cross-platform arbitrage route", sub: "Detect price gaps, choose route, estimate slippage and show the CCTP/Gateway path before execution.", intent: "RFB 05", proof: "route + receipt" };
-    if (t.includes("portfolio")) return { title: "Adaptive portfolio manager", sub: "Detect market regime, rebalance exposure and park capital in risk-off assets when needed.", intent: "RFB 04", proof: "allocation plan" };
-    if (t.includes("circle") || t.includes("x402") || t.includes("kit") || t.includes("merchant")) return { title: "Circle and Arc tool console", sub: "Use App Kit, CCTP, Gateway, x402 and nanopayment flows as the product's settlement layer.", intent: "Circle stack", proof: "USDC payments on Arc" };
-    if (t.includes("receipt")) return { title: "Arc settlement ledger", sub: "Review paid agent actions and receipts that prove which product flows actually settled.", intent: "Proof layer", proof: "receipt history" };
-  }
-
-  if (workspace.id === "0g") {
-    if (t.includes("identity") || t.includes("agent")) return { title: "Agent identity and authority", sub: "Register agent identity, set budget authority and connect it to paid compute/storage actions.", intent: "Identity", proof: "agent registry" };
-    if (t.includes("compute") || t.includes("inference")) return { title: "0G compute job console", sub: "Run inference jobs, compare cost, track queue state and verify execution metadata.", intent: "Compute", proof: "job receipt" };
-    if (t.includes("trading")) return { title: "0G trading arena", sub: "Use 0G compute as the arena where agents generate, compare and settle market signals.", intent: "Agent market", proof: "A2A loop" };
-    if (t.includes("storage")) return { title: "0G storage memory layer", sub: "Pin agent memory, manage allowlists and prove which data was stored or retrieved.", intent: "Storage", proof: "content hash" };
-    if (t.includes("privacy") || t.includes("tee") || t.includes("sovereign")) return { title: "TEE privacy proof flow", sub: "Seal payloads, run private execution and unseal only with matching receipt proof.", intent: "Privacy", proof: "attestation" };
-  }
-
-  if (workspace.id === "arbitrum") {
-    if (t.includes("stablecoin") || t.includes("payment") || t.includes("usdc")) return { title: "USDC payment operations", sub: "Send, schedule and batch Arbitrum USDC payments through agent-safe controls.", intent: "Payments", proof: "USDC transfer flow" };
-    if (t.includes("escrow")) return { title: "Agent escrow release flow", sub: "Hold funds until delivery is verified, then release, refund or dispute with clear audit state.", intent: "Escrow", proof: "release/refund state" };
-    if (t.includes("orbit") || t.includes("monitor")) return { title: "Orbit chain health monitor", sub: "Track settlement health, bridge status and operational readiness for Orbit-based products.", intent: "Monitoring", proof: "chain status" };
-    if (t.includes("agent") || t.includes("marketplace")) return { title: "Agent service marketplace", sub: "Register services, enforce budgets and route agent intents through onchain-safe rails.", intent: "Marketplace", proof: "registry + budget" };
-    if (t.includes("risk") || t.includes("rule") || t.includes("protection")) return { title: "Spend protection rules", sub: "Define allowlists, max spend and contract safety checks before payments are approved.", intent: "Risk control", proof: "policy enforcement" };
-    if (t.includes("stylus") || t.includes("rust")) return { title: "Stylus contract workspace", sub: "Review and simulate Rust/Stylus contract payment flows before shipping them.", intent: "Contracts", proof: "contract sim" };
-  }
-
-  if (workspace.id === "mantle") {
-    if (t.includes("economy")) return { title: "Mantle agent economy", sub: "Track autonomous agent wallets, service demand and paid economic loops on Mantle.", intent: "Economy", proof: "agent activity" };
-    if (t.includes("alpha")) return { title: "Alpha intelligence desk", sub: "Combine whale alerts, alpha feeds and bot decisions into a tradable signal workspace.", intent: "Alpha", proof: "signal feed" };
-    if (t.includes("meth") || t.includes("usdy") || t.includes("yield") || t.includes("compare")) return { title: "Yield allocation console", sub: "Compare mETH, USDY and yield routes, then simulate rebalancing before capital moves.", intent: "Yield", proof: "projection" };
-    if (t.includes("rwa")) return { title: "RWA registry and risk desk", sub: "Review RWA instruments, risk attributes and evidence before agent allocation.", intent: "RWA", proof: "registry" };
-    if (t.includes("strateg") || t.includes("sandbox")) return { title: "Strategy simulation lab", sub: "Run backtests, deploy strategy candidates and keep receipts for each simulation.", intent: "Simulation", proof: "backtest result" };
-    if (t.includes("devtool") || t.includes("dev tool")) return { title: "Mantle developer toolbench", sub: "Optimize gas, inspect chain settings and turn dev actions into product-ready flows.", intent: "Developer", proof: "tool output" };
-    if (t.includes("credit") || t.includes("budget")) return { title: "Agent credit and budget desk", sub: "Score agents, approve credit lines and constrain daily spend before autonomous execution.", intent: "Credit", proof: "budget policy" };
-    if (t.includes("a2a") || t.includes("loop")) return { title: "Agent-to-agent loop", sub: "Show how Mantle agents discover, pay and complete services with traceable state.", intent: "A2A", proof: "loop receipt" };
-  }
-
-  if (workspace.id === "sui") {
-    if (t.includes("walrus") || t.includes("storage")) return { title: "Walrus storage workflow", sub: "Store assets and agent memory, then verify object references and payment state.", intent: "Storage", proof: "object proof" };
-    if (t.includes("move") || t.includes("contracts")) return { title: "Move contract workspace", sub: "Inspect Move contract flows and payment hooks in the context of agent actions.", intent: "Contracts", proof: "module view" };
-    if (t.includes("nft") || t.includes("market")) return { title: "Sui NFT market flow", sub: "List, buy and evaluate NFT actions through agent-controlled payment and reputation.", intent: "Market", proof: "NFT action" };
-    if (t.includes("wallet") || t.includes("agent")) return { title: "Sui agent wallet", sub: "Control agent wallet state, zkLogin, approvals and economy loop from one place.", intent: "Wallet", proof: "wallet policy" };
-    if (t.includes("yield") || t.includes("escrow")) return { title: "DeepBook yield escrow", sub: "Preview yield and escrow actions before an agent commits funds.", intent: "Yield", proof: "escrow state" };
-    if (t.includes("arena")) return { title: "Battle arena", sub: "Let agents compete, spend and earn with visible rules and result receipts.", intent: "Game economy", proof: "match result" };
-    if (t.includes("pay widget") || t.includes("pay button") || t.includes("widget")) return { title: "Sui pay widget", sub: "Configure a payment widget as the entry point for user-facing agent commerce.", intent: "Payments", proof: "widget config" };
-    if (t.includes("memory")) return { title: "Agent memory network", sub: "Connect memory records, ownership and retrieval to usable agent workflows.", intent: "Memory", proof: "memory graph" };
-    if (t.includes("intent")) return { title: "Intent engine", sub: "Translate user intent into executable agent steps with explicit constraints.", intent: "Intent", proof: "intent plan" };
-    if (t.includes("receipt")) return { title: "Reputation receipts", sub: "Turn completed actions into reputation evidence that users can inspect.", intent: "Reputation", proof: "NFT receipt" };
-  }
-
-  if (workspace.id === "qie") {
-    if (t.includes("checkout") || t.includes("merchant")) return { title: "Merchant checkout workspace", sub: "Create payment links, split settlement and track POS requests for real merchants.", intent: "Commerce", proof: "checkout receipt" };
-    if (t.includes("qiedex") || t.includes("dex")) return { title: "QIEDEX swap desk", sub: "Quote swaps, inspect liquidity and execute only after the route is understandable.", intent: "DEX", proof: "quote result" };
-    if (t.includes("gaming") || t.includes("game")) return { title: "Game item economy", sub: "Sell items, route payments and track creator/game receipts inside one flow.", intent: "Gaming", proof: "item receipt" };
-    if (t.includes("social") || t.includes("creator")) return { title: "Creator monetization flow", sub: "Handle tips, subscriptions and social payments with clear settlement state.", intent: "Creator", proof: "subscription/tip" };
-    if (t.includes("wallet")) return { title: "QIE wallet control room", sub: "Review wallet balances, actions and agent spending from the user's perspective.", intent: "Wallet", proof: "wallet activity" };
-    if (t.includes("oracle")) return { title: "Oracle feed workspace", sub: "Inspect feed values, freshness and downstream product impact before agents use them.", intent: "Oracle", proof: "feed freshness" };
-    if (t.includes("credit")) return { title: "Credit decision workspace", sub: "Score credit, preview limits and record decisions as auditable agent actions.", intent: "Credit", proof: "score output" };
-    if (t.includes("pass")) return { title: "QIE Pass identity gate", sub: "Issue access passes and enforce identity-gated commerce without exposing private data.", intent: "Identity", proof: "access proof" };
-  }
-
-  if (workspace.id === "polygon") {
-    if (t.includes("merchant") || t.includes("mode")) return { title: "Merchant Mode onboarding", sub: "Guide a merchant from setup to first payment with Polygon-native settlement.", intent: "Merchant", proof: "onboarding state" };
-    if (t.includes("trade") || t.includes("finance")) return { title: "Trade finance desk", sub: "Model invoices, financing and payment status for cross-border business flows.", intent: "Trade finance", proof: "invoice state" };
-    if (t.includes("marketplace") || t.includes("agent")) return { title: "Agent marketplace", sub: "Browse paid agent services and inspect payment/reputation before calling them.", intent: "Marketplace", proof: "service profile" };
-    if (t.includes("usdc") || t.includes("payment") || t.includes("remittance")) return { title: "USDC remittance flow", sub: "Send and track low-cost USDC payments with user-readable status.", intent: "Payments", proof: "payment receipt" };
-    if (t.includes("overview")) return { title: "Polygon operating dashboard", sub: "See workspace-level traction, payments and agent activity without endpoint clutter.", intent: "Overview", proof: "live metrics" };
-    if (t.includes("receipt")) return { title: "Polygon receipt ledger", sub: "Review settled Polygon payments and keep the proof trail clear for users.", intent: "Receipts", proof: "settlement list" };
-  }
-
-  return base;
+  return WS_MODULES[workspace.id].tabMeta(tabLabel) ?? base;
 }
 
 function ProductTabHeader({ workspace, tabLabel, copy }: { workspace: Workspace; tabLabel: string; copy: ProductTabCopy }) {
@@ -1943,89 +1772,6 @@ function SwapQuoteDesk({ workspace }: { workspace: Workspace }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// 0G — Sealed Payload Vault (Privacy tab, replaces the static access-rules list)
-// ---------------------------------------------------------------------------
-type SealedRecord = { sealId: string; recipient: string; digest: string; createdAt: string };
-function SealedPayloadVault({ workspace }: { workspace: Workspace }) {
-  const { emitReceipt, receipts } = useAppState();
-  const [seals, setSeals] = useLocalStore<SealedRecord[]>("0g.seals", []);
-  const [recipient, setRecipient] = useState("agid_0g_a1f3");
-  const [payload, setPayload] = useState('{ "strategy": "rotate 40% mETH→USDY when spread<0.04%", "params": { "band": 0.6 } }');
-  const [unsealId, setUnsealId] = useState("");
-  const [unsealReceipt, setUnsealReceipt] = useState("");
-  const [unsealRes, setUnsealRes] = useState<{ ok: boolean; text: string } | null>(null);
-  const [sealing, setSealing] = useState(false);
-  const recent = useMemo(() => receipts.filter((r) => r.workspaceId === workspace.id && r.kind === "0g.seal").slice(0, 6), [receipts, workspace.id]);
-
-  const seal = async () => {
-    if (!payload.trim() || sealing) return;
-    setSealing(true);
-    const nonce = Math.random().toString(36).slice(2);
-    const hash = await sha256Hex(payload + recipient + nonce);
-    const sealId = "seal_" + hashId("seal", hash, 8);
-    const digest = hash.slice(0, 32);
-    setSeals((prev) => [{ sealId, recipient: recipient.trim() || "(unset)", digest, createdAt: new Date().toISOString() }, ...prev].slice(0, 20));
-    emitReceipt({ workspaceId: workspace.id, serviceName: "0G Sealed Payload", amount: 0.008, currency: "USDC", network: workspace.networks[0] ?? "0g-galileo", kind: "0g.seal", payload: { sealId, recipient: recipient.trim(), digest } });
-    setUnsealId(sealId);
-    setSealing(false);
-  };
-  const unseal = () => {
-    const s = seals.find((x) => x.sealId === unsealId.trim());
-    if (!s) { setUnsealRes({ ok: false, text: "no such seal id" }); return; }
-    const r = receipts.find((x) => x.id === unsealReceipt.trim());
-    if (!r) { setUnsealRes({ ok: false, text: "receipt not found — paste the receipt id from the seal payment" }); return; }
-    const okMatch = ((r.payload ?? {}) as { sealId?: string }).sealId === s.sealId;
-    setUnsealRes(okMatch ? { ok: true, text: `unsealed for ${s.recipient} — digest ${s.digest}…` } : { ok: false, text: "proof does not match this seal — that receipt is for a different sealed payload" });
-  };
-
-  return (
-    <div className="panel block svc-flavor">
-      <div className="block-head"><div className="ttl"><span className="sq soft"><ShieldCheck width={15} height={15} /></span><div><h3>Sealed payload vault</h3><div className="sub">encrypt a request payload for a recipient Agent ID · the vault stores only the ciphertext digest · unseal only with a matching receipt</div></div></div></div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 10, padding: "0 16px 10px", alignItems: "end" }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: ".6rem", textTransform: "uppercase", letterSpacing: ".08em", color: "var(--muted)", fontWeight: 700 }}>Recipient Agent ID</span>
-          <input value={recipient} onChange={(e) => setRecipient(e.currentTarget.value)} style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid var(--line-2)", background: "var(--bg-2)", color: "var(--ink)", fontSize: ".82rem", fontFamily: "var(--mono)" }} />
-        </label>
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: ".6rem", textTransform: "uppercase", letterSpacing: ".08em", color: "var(--muted)", fontWeight: 700 }}>Payload (encrypted before submit)</span>
-          <input value={payload} onChange={(e) => setPayload(e.currentTarget.value)} style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid var(--line-2)", background: "var(--bg-2)", color: "var(--ink)", fontSize: ".78rem", fontFamily: "var(--mono)" }} />
-        </label>
-        <button className="btn btn-acc btn-sm" type="button" onClick={seal} disabled={sealing || !payload.trim()}>{sealing ? <><Loader2 size={12} className="wallet-spin" /> Sealing…</> : <><ShieldCheck width={12} height={12} /> Seal payload ($0.008)</>}</button>
-      </div>
-      <div style={{ padding: "0 16px 12px" }}>
-        <div style={{ fontSize: ".62rem", textTransform: "uppercase", letterSpacing: ".09em", fontWeight: 800, color: "var(--muted)", padding: "6px 0" }}>Sealed payloads · {seals.length}</div>
-        <div className="svc-table__scroll"><table className="svc-table">
-          <thead><tr><th>Seal ID</th><th>Recipient</th><th>Digest</th><th>When</th></tr></thead>
-          <tbody>
-            {seals.length === 0 && <tr><td colSpan={4} style={{ color: "var(--muted)", padding: 12 }}>No sealed payloads — seal one above.</td></tr>}
-            {seals.map((s) => (<tr key={s.sealId}><td><code>{s.sealId}</code></td><td style={{ fontFamily: "var(--mono)", fontSize: ".74rem" }}>{s.recipient}</td><td style={{ fontFamily: "var(--mono)", fontSize: ".7rem", color: "var(--muted)" }}>{s.digest}…</td><td className="muted svc-table__num">{new Date(s.createdAt).toLocaleTimeString()}</td></tr>))}
-          </tbody>
-        </table></div>
-      </div>
-      <div style={{ margin: "0 16px 12px", padding: "10px 14px", borderRadius: 12, border: "1px solid var(--line-2)", background: "var(--field)" }}>
-        <div style={{ fontSize: ".62rem", textTransform: "uppercase", letterSpacing: ".09em", fontWeight: 800, color: "var(--muted)", marginBottom: 8 }}>Unseal — requires a matching receipt id</div>
-        <div className="row sm" style={{ gap: 8, flexWrap: "wrap" }}>
-          <input value={unsealId} onChange={(e) => setUnsealId(e.currentTarget.value)} placeholder="seal id" style={{ flex: 1, minWidth: 160, padding: "7px 9px", borderRadius: 8, border: "1px solid var(--line-2)", background: "var(--bg-2)", color: "var(--ink)", fontSize: ".78rem", fontFamily: "var(--mono)" }} />
-          <input value={unsealReceipt} onChange={(e) => setUnsealReceipt(e.currentTarget.value)} placeholder="receipt id (rcpt_…)" style={{ flex: 1, minWidth: 160, padding: "7px 9px", borderRadius: 8, border: "1px solid var(--line-2)", background: "var(--bg-2)", color: "var(--ink)", fontSize: ".78rem", fontFamily: "var(--mono)" }} />
-          <button className="btn btn-sm" type="button" onClick={unseal}>Unseal</button>
-        </div>
-        {unsealRes && <div style={{ marginTop: 8, padding: "7px 12px", borderRadius: 10, background: `color-mix(in srgb, ${unsealRes.ok ? "var(--green)" : "var(--red)"} 12%, transparent)`, color: unsealRes.ok ? "var(--green)" : "var(--red)", fontSize: ".78rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 7 }}>{unsealRes.ok ? <Check width={13} height={13} /> : <X width={13} height={13} />} {unsealRes.text}</div>}
-      </div>
-      {recent.length > 0 && (
-        <div style={{ padding: "0 16px 14px" }}>
-          <div style={{ fontSize: ".62rem", textTransform: "uppercase", letterSpacing: ".09em", fontWeight: 800, color: "var(--muted)", padding: "6px 0" }}>Recent seals · {recent.length}</div>
-          <div className="svc-hist">{recent.map((r) => { const p = (r.payload ?? {}) as { sealId?: string; recipient?: string }; return (
-            <div className="svc-hist__row" key={r.id}><span className="svc-hist__dot" style={{ background: "var(--accent-primary)" }} /><div className="svc-hist__main"><b>{p.sealId}</b><span>→ {p.recipient} · receipt {r.id} · {new Date(r.createdAt).toLocaleTimeString()}</span></div><span className="svc-hist__amt">{r.amount.toFixed(3)}</span></div>
-          ); })}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-
 
 
 
@@ -2037,6 +1783,8 @@ export function ServiceTabPage({
   receipts,
   variant,
   onOpenPayment,
+  onGoTab = () => false,
+  onGoReceipts = () => {},
 }: {
   services: Service[];
   workspace: Workspace;
@@ -2044,10 +1792,22 @@ export function ServiceTabPage({
   receipts: Receipt[];
   variant: "service" | "verify";
   onOpenPayment: (s: Service) => void;
+  onGoTab?: (t: string) => boolean;
+  onGoReceipts?: () => void;
 }) {
   const [q, setQ] = useState("");
   const [methodFilter, setMethodFilter] = useState<string>("all");
   const t = tabLabel.toLowerCase();
+
+  const tabCtx: TabCtx = {
+    workspace,
+    services,
+    receipts,
+    onOpenPayment,
+    onGoTab,
+    onGoReceipts,
+  };
+  const wsContent = WS_MODULES[workspace.id].renderTabContent(tabLabel, tabCtx);
 
   const tabCat =
     t.includes("trading") ? "trading"
@@ -2113,15 +1873,7 @@ export function ServiceTabPage({
     t.includes("escrow") || t.includes("alert") || t.includes("strateg") || t.includes("sandbox") ||
     isVerifyFlavor || t.includes("compute") || t.includes("inference") || t.includes("storage") ||
     t.includes("checkout") || t.includes("orbit") || t.includes("monitor") || t.includes("qiedex") || t.includes("dex") ||
-    // Arbitrum: "Stylus Contracts" is the API reference tab — excluded so grid shows there
-    (workspace.id === "arbitrum" && (t.includes("stablecoin") || t.includes("payment") || t.includes("usdc") || t.includes("agent") || t.includes("marketplace") || t.includes("risk") || t.includes("rule") || t.includes("protection") || t.includes("rust"))) ||
-    (workspace.id === "mantle" && (t.includes("alpha") || t.includes("meth") || t.includes("usdy") || t.includes("yield") || t.includes("compare") || t.includes("rwa") || t.includes("economy") || t.includes("credit") || t.includes("budget") || t.includes("a2a") || t.includes("loop") || t.includes("devtool") || t.includes("dev tool"))) ||
-    (workspace.id === "sui" && (t.includes("walrus") || t.includes("storage") || t.includes("move") || t.includes("contracts") || t.includes("nft") || t.includes("market") || t.includes("wallet") || t.includes("agent") || t.includes("yield") || t.includes("escrow") || t.includes("arena") || t.includes("memory") || t.includes("intent") || t.includes("receipt") || t.includes("pay widget") || t.includes("pay button") || t.includes("widget"))) ||
-    (workspace.id === "qie" && (t.includes("merchant") || t.includes("gaming") || t.includes("game") || t.includes("social") || t.includes("creator") || t.includes("wallet") || t.includes("credit") || t.includes("oracle") || t.includes("pass"))) ||
-    // 0G: "Receipts" is the API reference tab — excluded so grid shows there
-    (workspace.id === "0g" && (t.includes("compute") || t.includes("inference") || t.includes("storage") || t.includes("trading") || t.includes("privacy") || t.includes("sovereign") || t.includes("tee") || t.includes("identity") || t.includes("agent"))) ||
-    (workspace.id === "agora" && (t.includes("arbitrage") || t.includes("arb") || t.includes("engine") || t.includes("portfolio") || t.includes("x402") || t.includes("circle") || t.includes("merchant") || t.includes("receipt") || t.includes("copy") || t.includes("reasoning") || t.includes("trace") || t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard") || t.includes("kill") || t.includes("risk-off") || t.includes("vault") || t.includes("usyc") || t.includes("yield") || t.includes("swap") || t.includes("app kit") || t.includes("kit"))) ||
-    (workspace.id === "polygon" && (t.includes("merchant") || t.includes("mode") || t.includes("trade") || t.includes("finance") || t.includes("usdc") || t.includes("payment") || t.includes("remittance") || t.includes("overview") || t.includes("receipt") || t.includes("marketplace") || t.includes("agent")));
+    wsContent != null;
 
   const productCopy = productTabCopy(workspace, tabLabel, ttl, sub);
 
@@ -2153,176 +1905,35 @@ export function ServiceTabPage({
       {/* ── FUNCTIONAL ZONE — the page is built around what you can DO here ── */}
 
       {t.includes("escrow") && <InteractiveEscrow workspace={workspace} />}
-      {workspace.id === "arbitrum" && t.includes("escrow") && <ArbitrumEscrowPanel workspace={workspace} />}
-      {workspace.id === "arbitrum" && t.includes("escrow") && <ArbDisputePanel workspace={workspace} />}
 
-      {workspace.id !== "agora" && (t.includes("strateg") || t.includes("sandbox")) && <BacktestRunner workspace={workspace} />}
+      {(t.includes("strateg") || t.includes("sandbox")) && <BacktestRunner workspace={workspace} />}
 
-      {workspace.id === "0g" && (t.includes("privacy") || t.includes("sovereign") || (variant === "verify" && !t.includes("pass") && !t.includes("rule") && !t.includes("risk"))) && (
-        <OgPrivacyStepper workspace={workspace} />
-      )}
-      {workspace.id === "0g" && (t.includes("privacy") || t.includes("sovereign") || (variant === "verify" && !t.includes("pass") && !t.includes("rule") && !t.includes("risk"))) && (
-        <SealedPayloadVault workspace={workspace} />
-      )}
-      {workspace.id === "0g" && (t.includes("privacy") || t.includes("tee") || t.includes("sovereign")) && (
-        <ProofVerifier workspace={workspace} />
-      )}
-
-      {workspace.id !== "agora" && (t.includes("pass") || (variant === "verify" && !t.includes("rule") && !t.includes("risk") && !t.includes("privacy") && !t.includes("sovereign"))) && (
+      {(t.includes("pass") || (variant === "verify" && !t.includes("rule") && !t.includes("risk") && !t.includes("privacy") && !t.includes("sovereign"))) && (
         <>
           <ProofVerifier workspace={workspace} />
-          {workspace.id === "qie" ? <QiePassIssuer workspace={workspace} services={base} />
-            : workspace.id === "0g" ? null
-            : (
-              <div className="panel block svc-flavor">
-                <div className="block-head"><div className="ttl"><span className="sq soft"><Shield width={15} height={15} /></span><div><h3>Access rules</h3><div className="sub">who can call what, and the proof attached to each access</div></div></div></div>
-                <ul className="svc-guarantees">
-                  <li><Check width={13} height={13} /> Only addresses holding a valid pass / verified identity may call gated endpoints</li>
-                  <li><Check width={13} height={13} /> Each access check is recorded as a single-use receipt with caller, endpoint and timestamp</li>
-                  <li><Check width={13} height={13} /> Sealed request payloads are unsealed only for the matching receipt holder</li>
-                  <li><Check width={13} height={13} /> Spend caps and allowlists are evaluated server-side before any payment clears</li>
-                </ul>
-              </div>
-            )}
+          <div className="panel block svc-flavor">
+            <div className="block-head"><div className="ttl"><span className="sq soft"><Shield width={15} height={15} /></span><div><h3>Access rules</h3><div className="sub">who can call what, and the proof attached to each access</div></div></div></div>
+            <ul className="svc-guarantees">
+              <li><Check width={13} height={13} /> Only addresses holding a valid pass / verified identity may call gated endpoints</li>
+              <li><Check width={13} height={13} /> Each access check is recorded as a single-use receipt with caller, endpoint and timestamp</li>
+              <li><Check width={13} height={13} /> Sealed request payloads are unsealed only for the matching receipt holder</li>
+              <li><Check width={13} height={13} /> Spend caps and allowlists are evaluated server-side before any payment clears</li>
+            </ul>
+          </div>
         </>
       )}
 
-      {workspace.id === "0g" && (t.includes("compute") || t.includes("inference")) && <OgComputeCostChart workspace={workspace} />}
-      {workspace.id === "0g" && (t.includes("compute") || t.includes("inference")) && <OgComputeKanban workspace={workspace} />}
-      {(t.includes("compute") || t.includes("inference")) && <InferenceJobRunner workspace={workspace} />}
-      {workspace.id === "0g" && (t.includes("compute") || t.includes("inference")) && <TeeAttestationVerifier workspace={workspace} />}
+      {wsContent}
 
-      {workspace.id === "0g" && t.includes("trading") && <OgAgentToAgentLoop workspace={workspace} />}
-      {workspace.id === "0g" && t.includes("trading") && <OgTradingArenaWidget workspace={workspace} />}
-      {workspace.id === "0g" && t.includes("agent") && <DiscoveryWidget />}
-      {workspace.id === "0g" && t.includes("agent") && <MerchantWidget />}
+      {(t.includes("compute") || t.includes("inference")) && <InferenceJobRunner workspace={workspace} />}
 
       {t.includes("storage") && <StoragePinWidget workspace={workspace} />}
-      {workspace.id === "0g" && t.includes("storage") && <DePinBulkPin workspace={workspace} />}
-      {workspace.id === "0g" && t.includes("storage") && <OgAllowlistManager />}
 
       {t.includes("checkout") && <><CheckoutLinkBuilder workspace={workspace} /><SettlementSplitConfig workspace={workspace} /></>}
-      {workspace.id === "qie" && t.includes("checkout") && <QiePosWidget workspace={workspace} />}
-      {workspace.id === "qie" && t.includes("checkout") && <QieBillSplitter workspace={workspace} />}
-      {workspace.id === "qie" && t.includes("checkout") && <QieRequestPay workspace={workspace} />}
-      {workspace.id === "qie" && (t.includes("checkout") || t.includes("merchant")) && <QieSalesAnalytics workspace={workspace} />}
 
       {(t.includes("orbit") || t.includes("monitor")) && <OrbitMonitorPanel workspace={workspace} />}
-      {workspace.id === "arbitrum" && (t.includes("orbit") || t.includes("monitor")) && <RobinhoodChainPanel workspace={workspace} />}
 
       {(t.includes("qiedex") || t.includes("dex")) && <SwapQuoteDesk workspace={workspace} />}
-
-      {workspace.id === "qie" && (t.includes("gaming") || t.includes("game")) && <GameItemShop workspace={workspace} />}
-      {workspace.id === "qie" && (t.includes("social") || t.includes("creator")) && <QieCreatorTipsWidget workspace={workspace} />}
-      {workspace.id === "qie" && (t.includes("social") || t.includes("creator")) && <QieCreatorSubscriptions workspace={workspace} />}
-      {workspace.id === "qie" && t.includes("wallet") && <QieWalletDashboard workspace={workspace} />}
-      {workspace.id === "qie" && t.includes("merchant") && <><MerchantPayoutsPanel workspace={workspace} /></>}
-      {workspace.id === "qie" && t.includes("oracle") && <QieOracleFeedWidget workspace={workspace} />}
-      {workspace.id === "qie" && t.includes("credit") && <QieCreditWidget workspace={workspace} />}
-
-      {workspace.id === "arbitrum" && (t.includes("stablecoin") || t.includes("payment") || t.includes("usdc")) && <ArbPaymentFlowDiagram />}
-      {workspace.id === "arbitrum" && (t.includes("stablecoin") || t.includes("payment") || t.includes("usdc")) && <ArbAddressBook />}
-      {workspace.id === "arbitrum" && (t.includes("stablecoin") || t.includes("payment") || t.includes("usdc")) && <UsdcTransferWidget workspace={workspace} />}
-      {workspace.id === "arbitrum" && (t.includes("stablecoin") || t.includes("payment") || t.includes("usdc")) && <BatchPayoutConsole workspace={workspace} />}
-      {workspace.id === "arbitrum" && (t.includes("stablecoin") || t.includes("payment") || t.includes("usdc")) && <ArbRecurringPayments workspace={workspace} />}
-      {workspace.id === "arbitrum" && t.includes("agent") && <AgentServiceRegistry workspace={workspace} onOpenPayment={onOpenPayment} />}
-      {workspace.id === "arbitrum" && (t.includes("agent") || t.includes("marketplace")) && <ArbBudgetPanel workspace={workspace} />}
-      {workspace.id === "arbitrum" && (t.includes("agent") || t.includes("marketplace")) && <ArbOnChainRegistry workspace={workspace} />}
-      {workspace.id === "arbitrum" && (t.includes("agent") || t.includes("marketplace")) && <DiscoveryWidget />}
-      {workspace.id === "arbitrum" && t.includes("marketplace") && <MerchantWidget />}
-      {workspace.id === "arbitrum" && (t.includes("stylus") || t.includes("rust") || t.includes("agent")) && <StylusSnippetViewer workspace={workspace} />}
-      {workspace.id === "arbitrum" && (t.includes("intent") || t.includes("cross") || t.includes("agent") || t.includes("marketplace")) && <ErrorBoundary label="AgentIntent (ERC-7683)"><AgentIntentWidget /></ErrorBoundary>}
-      {workspace.id === "arbitrum" && t.includes("stylus") && <ArbitrumStylusDeployPanel workspace={workspace} />}
-      {workspace.id === "arbitrum" && t.includes("stylus") && <ArbContractPaymentSim workspace={workspace} />}
-      {workspace.id === "arbitrum" && (t.includes("risk") || t.includes("rule") || t.includes("protection")) && <ArbAllowanceManager workspace={workspace} />}
-      {workspace.id === "arbitrum" && (t.includes("risk") || t.includes("rule") || t.includes("protection")) && <SpendRulesEditor workspace={workspace} services={base} />}
-      {workspace.id === "arbitrum" && (t.includes("risk") || t.includes("rule") || t.includes("protection") || t.includes("wallet")) && <ArbAgentReputation workspace={workspace} />}
-      {workspace.id === "mantle" && t.includes("economy") && <MantleAgentEconomyDashboard workspace={workspace} />}
-      {workspace.id === "mantle" && (t.includes("agent") || t.includes("marketplace") || t.includes("economy")) && <DiscoveryWidget />}
-      {workspace.id === "mantle" && (t.includes("agent") || t.includes("marketplace")) && <MerchantWidget />}
-      {workspace.id === "mantle" && t.includes("alpha") && <AlphaDesk workspace={workspace} />}
-      {workspace.id === "mantle" && t.includes("alpha") && <Suspense fallback={null}><WhaleAlertFeed workspace={workspace} /></Suspense>}
-      {workspace.id === "mantle" && (t.includes("meth") || t.includes("usdy") || (t.includes("yield") && !t.includes("alpha"))) && <MantleEarnCalc workspace={workspace} />}
-      {workspace.id === "mantle" && (t.includes("meth") || t.includes("usdy") || (t.includes("yield") && !t.includes("alpha"))) && <MantlePortfolioRebalancer workspace={workspace} />}
-      {workspace.id === "mantle" && (t.includes("meth") || t.includes("usdy") || (t.includes("yield") && !t.includes("alpha"))) && <YieldBoard workspace={workspace} />}
-      {workspace.id === "mantle" && (t.includes("meth") || t.includes("usdy") || (t.includes("yield") && !t.includes("alpha"))) && <Suspense fallback={null}><YieldProjectionCalc workspace={workspace} /></Suspense>}
-      {workspace.id === "mantle" && (t.includes("strateg") || t.includes("sandbox")) && <Suspense fallback={null}><StrategyDeployPanel workspace={workspace} /></Suspense>}
-      {workspace.id === "mantle" && t.includes("rwa") && <RwaRegistry workspace={workspace} />}
-      {workspace.id === "mantle" && (t.includes("devtool") || t.includes("dev tool")) && <MantleGasOptimizer workspace={workspace} />}
-      {workspace.id === "mantle" && (t.includes("devtool") || t.includes("dev tool")) && <MantleDevToolsPanel workspace={workspace} />}
-      {workspace.id === "mantle" && t.includes("credit") && <Suspense fallback={null}><CreditScoreMeter workspace={workspace} /></Suspense>}
-      {workspace.id === "mantle" && t.includes("alpha") && <Suspense fallback={null}><AlphaBotWidget workspace={workspace} /></Suspense>}
-      {workspace.id === "mantle" && t.includes("budget") && <Suspense fallback={null}><AgentBudgetDashboard workspace={workspace} /></Suspense>}
-      {workspace.id === "mantle" && (t.includes("yield") || t.includes("compare")) && <Suspense fallback={null}><YieldComparisonWidget workspace={workspace} /></Suspense>}
-      {workspace.id === "mantle" && (t.includes("a2a") || t.includes("loop")) && <Suspense fallback={null}><MantleA2ALoopWidget workspace={workspace} /></Suspense>}
-      {workspace.id === "sui" && (t.includes("walrus") || t.includes("storage")) && <WalrusStorageWidget workspace={workspace} />}
-      {workspace.id === "sui" && (t.includes("move") || t.includes("contracts")) && <MoveContractViewer workspace={workspace} />}
-      {workspace.id === "sui" && (t.includes("nft") || t.includes("market")) && <SuiNftMarket workspace={workspace} />}
-      {workspace.id === "sui" && (t.includes("wallet") || t.includes("agent")) && <><SuiAgentWalletPanel workspace={workspace} /><ZkLoginPanel workspace={workspace} /><SuiAgentEconomyLoop workspace={workspace} /></>}
-      {workspace.id === "sui" && (t.includes("yield") || t.includes("escrow")) && <DeepBookYieldEscrow workspace={workspace} />}
-      {workspace.id === "sui" && t.includes("arena") && <BattleArenaWidget workspace={workspace} />}
-      {workspace.id === "sui" && (t.includes("pay widget") || t.includes("pay button") || t.includes("widget")) && <SuiPayButtonWidget workspace={workspace} />}
-      {workspace.id === "sui" && (t.includes("memory") || t.includes("memory network")) && <AgentMemoryNetwork workspace={workspace} />}
-      {workspace.id === "sui" && t.includes("intent") && <IntentEngineWidget workspace={workspace} />}
-      {workspace.id === "sui" && t.includes("receipt") && <AgentNftReputation workspace={workspace} />}
-
-      {workspace.id === "agora" && (t.includes("arbitrage") || t.includes("arb") || t.includes("engine")) && <AgoraTradingWidget />}
-      {workspace.id === "agora" && t.includes("portfolio") && <AgoraPortfolioWidget workspace={workspace} />}
-      {workspace.id === "agora" && (t.includes("x402") && !t.includes("portfolio")) && <AgoraX402Widget workspace={workspace} />}
-      {workspace.id === "agora" && t.includes("circle") && <><AgoraCircleToolsWidget workspace={workspace} /><AgoraCctpWidget workspace={workspace} /></>}
-      {workspace.id === "agora" && t.includes("receipt") && (
-        <div className="panel block svc-flavor">
-          <div className="block-head"><div className="ttl"><span className="sq soft"><RIco width={15} height={15} /></span><div><h3>Payment receipts</h3><div className="sub">Arc payments settled via x402 · leaderboard below</div></div></div></div>
-          {receipts.filter(r => r.workspaceId === workspace.id).length === 0 && <div className="muted sm" style={{ padding: "16px 20px" }}>No receipts yet — make a call to see payments here.</div>}
-          <div className="svc-hist">
-            {receipts.filter((r): r is Receipt => r.workspaceId === workspace.id).slice(0, 10).map((r) => (
-              <div className="svc-hist__row" key={r.id}>
-                <span className="svc-hist__dot" style={{ background: "#1fb58a" }} />
-                <div className="svc-hist__main"><b>{r.serviceName}</b><span>{r.network} · {new Date(r.createdAt).toLocaleString()}</span></div>
-                {badgeFor(r.status)}
-                <span className="svc-hist__amt">{fmtUsd(r.amount)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {workspace.id === "agora" && t.includes("receipt") && <AgoraLeaderboardWidget workspace={workspace} />}
-      {workspace.id === "agora" && (t.includes("copy") || t.includes("copy trading")) && <ArcMindCopyTradingWidget workspace={workspace} />}
-      {workspace.id === "agora" && (t.includes("reasoning") || t.includes("trace")) && <ArcMindReasoningWidget workspace={workspace} />}
-      {workspace.id === "agora" && (t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard")) && <ArcMindSignalHubWidget workspace={workspace} />}
-      {workspace.id === "agora" && t.includes("kill") && <ArcMindKillSwitchWidget workspace={workspace} />}
-      {workspace.id === "agora" && (t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard")) && (
-        <div className="widget-card-grid-2">
-          <ArcMindPnLWidget />
-          <ArcMindDebateWidget />
-        </div>
-      )}
-      {workspace.id === "agora" && (t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard")) && <ArcDecisionLogWidget />}
-      {workspace.id === "agora" && (t.includes("app kit") || t.includes("kit")) && <ArcAppKitWidget workspace={workspace} />}
-      {workspace.id === "agora" && (t.includes("usyc") || t.includes("yield") || t.includes("swap") || t.includes("risk-off") || t.includes("vault")) && <ArcMindYieldWidget workspace={workspace} />}
-      {workspace.id === "agora" && (t.includes("usyc") || t.includes("yield") || t.includes("swap") || t.includes("risk-off") || t.includes("vault")) && <ArcMindSwapWidget workspace={workspace} />}
-
-      {workspace.id === "polygon" && (t.includes("merchant") || t.includes("mode")) && <PolygonMerchantOnboardingWidget workspace={workspace} />}
-      {workspace.id === "polygon" && (t.includes("trade") || t.includes("finance")) && <PolygonTradeFinanceWidget workspace={workspace} />}
-      {workspace.id === "polygon" && (t.includes("marketplace") || t.includes("agent")) && <PolygonAgentMarketplaceWidget workspace={workspace} />}
-      {workspace.id === "polygon" && (t.includes("usdc") || t.includes("payment") || t.includes("remittance")) && <PolygonUsdcPaymentsWidget workspace={workspace} />}
-      {workspace.id === "polygon" && t.includes("overview") && <PolygonStatsWidget workspace={workspace} />}
-      {workspace.id === "polygon" && t.includes("receipt") && (
-        <div className="panel block svc-flavor">
-          <div className="block-head"><div className="ttl"><span className="sq soft"><RIco width={15} height={15} /></span><div><h3>Payment receipts</h3><div className="sub">all Polygon payments settled via x402</div></div></div></div>
-          {receipts.filter(r => r.workspaceId === workspace.id).length === 0 && <div className="muted sm" style={{ padding: "16px 20px" }}>No receipts yet — make a call to see payments here.</div>}
-          <div className="svc-hist">
-            {receipts.filter((r): r is Receipt => r.workspaceId === workspace.id).slice(0, 20).map((r) => (
-              <div className="svc-hist__row" key={r.id}>
-                <span className="svc-hist__dot" style={{ background: "#1fb58a" }} />
-                <div className="svc-hist__main"><b>{r.serviceName}</b><span>{r.network} · {new Date(r.createdAt).toLocaleString()}</span></div>
-                {badgeFor(r.status)}
-                <span className="svc-hist__amt">{fmtUsd(r.amount)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {!hasFlavor && <QuickCallPanel workspace={workspace} services={base} primary={base.find((s) => s.status === "active") ?? primary} onOpenPayment={onOpenPayment} receipts={receipts} />}
 
@@ -2676,19 +2287,21 @@ export function ReceiptsPage({ receipts, workspace, tabLabel }: { receipts: Rece
   }, [all]);
   const revenue = all.filter((r) => r.status === "verified" || r.status === "paid").reduce((s, r) => s + r.amount, 0);
   const failed = (counts.failed ?? 0) + (counts.replayed ?? 0) + (counts.expired ?? 0);
+  const isAgora = workspace.id === "agora";
 
   return (
     <>
-      <LedeHead crumb={`${workspace.id} workspace · ${tabLabel.toLowerCase()}`} title="Receipts & usage">
-        Every paid request leaves an immutable receipt: payer, provider, amount, network, tx hash and verification status.
-        Failed payments stay visible; replay attempts are logged.
+      <LedeHead crumb={`${workspace.id} workspace · ${tabLabel.toLowerCase()}`} title={isAgora ? "CopyGuard receipts" : "Receipts & usage"}>
+        {isAgora
+          ? "Every copy-session action shows who paid, which funding mode was used, whether it was live or fallback, and how the user can inspect or recover from failed actions."
+          : "Every paid request leaves an immutable receipt: payer, provider, amount, network, tx hash and verification status. Failed payments stay visible; replay attempts are logged."}
       </LedeHead>
 
       <div className="metrics mb">
-        <div className="metric"><div className="label">Revenue (verified)</div><div className="v">${revenue.toFixed(2)}</div><div className="sub">{(counts.verified ?? 0) + (counts.paid ?? 0)} verified payments</div></div>
+        <div className="metric"><div className="label">{isAgora ? "User-paid total" : "Revenue (verified)"}</div><div className="v">${revenue.toFixed(2)}</div><div className="sub">{(counts.verified ?? 0) + (counts.paid ?? 0)} verified payments</div></div>
         <div className="metric"><div className="label">Receipts</div><div className="v">{all.length}</div><div className="sub">all statuses</div></div>
-        <div className="metric"><div className="label">Failed</div><div className="v" style={{ color: failed ? "var(--red)" : undefined }}>{failed}</div><div className="sub">funds / expiry / replay</div></div>
-        <div className="metric"><div className="label">Replay attempts</div><div className="v">{counts.replayed ?? 0}</div><div className="sub">blocked at gateway</div></div>
+        <div className="metric"><div className="label">{isAgora ? "Needs review" : "Failed"}</div><div className="v" style={{ color: failed ? "var(--red)" : undefined }}>{failed}</div><div className="sub">{isAgora ? "fail / refund / fallback" : "funds / expiry / replay"}</div></div>
+        <div className="metric"><div className="label">{isAgora ? "Recovery events" : "Replay attempts"}</div><div className="v">{counts.replayed ?? 0}</div><div className="sub">{isAgora ? "blocked or replayed actions" : "blocked at gateway"}</div></div>
       </div>
 
       <div className="row wrap mb" style={{ gap: 8 }}>
@@ -3260,7 +2873,7 @@ export function WorkspaceDashboard({
           ) : kind === "gateway" ? (
             <GatewayPage workspace={workspace} tabLabel={activeTab} />
           ) : kind === "service" || kind === "verify" ? (
-            <ServiceTabPage services={services} workspace={workspace} tabLabel={activeTab} receipts={receipts} variant={kind === "verify" ? "verify" : "service"} onOpenPayment={onOpenPayment} />
+            <ServiceTabPage services={services} workspace={workspace} tabLabel={activeTab} receipts={receipts} variant={kind === "verify" ? "verify" : "service"} onOpenPayment={onOpenPayment} onGoTab={goTab} onGoReceipts={goToReceipts} />
           ) : (
             <CataloguePage agent={effectiveAgent} paidServiceIds={paidServiceIds} services={services} workspace={workspace} tabLabel={activeTab} onOpenPayment={onOpenPayment} onCreateOpen={() => setCreateOpen(true)} />
           )}
