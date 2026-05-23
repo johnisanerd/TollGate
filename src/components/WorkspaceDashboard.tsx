@@ -6,14 +6,11 @@ import {
   Code as CodeIcon,
   Code2,
   CreditCard,
-  Download,
   FileText,
   Globe,
   HelpCircle,
   LayoutDashboard,
-  Lightbulb,
   Loader2,
-  MessageCircle,
   Moon,
   Network,
   Pause,
@@ -36,7 +33,7 @@ import {
 import { ConnectWalletButton, WalletLiveStrip, useWallet, sendErc20Transfer, parseUnits } from "../wallet";
 import { useAppState } from "../app-state";
 import { useLocalStore } from "../lib/storage";
-import { deterministicScore, hashId, sha256Hex, fnv1aHex } from "../lib/util-hash";
+import { deterministicScore, hashId, sha256Hex } from "../lib/util-hash";
 import type { Agent, Receipt, ReceiptStatus, Service, Theme, Workspace, WorkspaceId } from "../types";
 import { serviceById, workspaceMetrics, makeServiceId, agents as allAgents, makeTxHash } from "../data";
 import { BarSpark, WeekBars } from "../charts402";
@@ -67,15 +64,12 @@ import { AgentIdRegistry, RevenueSplitConsole, OgMultiSigApprove, OgBudgetContro
 import { MantleEconomyLoop } from "../workspaces/mantle/inline-widgets";
 import { AgentWalletConsole } from "../workspaces/qie/widgets";
 import { A2AMarketplaceWidget } from "./widgets/A2AMarketplaceWidget";
-import { MerchantWidget } from "./widgets/MerchantWidget";
-import { DiscoveryWidget } from "./widgets/DiscoveryWidget";
 import { BudgetWidget } from "./widgets/BudgetWidget";
 import { AgentScoreCard } from "./widgets/AgentScoreBadge";
 import * as api from "../lib/api";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { runOgInference, anchorReceiptOnChain, isOgRegistryConfigured, getOgConfig, ogExplorerTxUrl, ogExplorerAddrUrl, uploadToOgStorage } from "../lib/og";
 import { explorerTxForNetwork } from "../lib/chains";
-import { AgentScoreComparison } from "./widgets/AgentScoreBadge";
 import { vaultRecordDecision, isMantleVaultConfigured, mantleExplorerTxUrl } from "../lib/mantle";
 import type { TabCtx, OverviewCtx, TabMeta, CardCtx, CardDef as WsCardDef } from "../workspaces/_types";
 import * as ogWidgets from "../workspaces/0g/widgets";
