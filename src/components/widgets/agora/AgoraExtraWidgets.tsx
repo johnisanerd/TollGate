@@ -90,11 +90,23 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
     }
     setPhase("Fetching live prices via CoinGecko…");
 
-    let liveEth = ASSETS[1].price;
+    let liveEth = 0;
     let fallbackNote: string | null = null;
-    try { ({ eth: liveEth } = await fetchLivePrices()); } catch {
-      liveEth = holdings.find((h) => h.symbol === "ETH")?.price || 3340;
-      fallbackNote = "Live price feed unavailable. Using the last local price snapshot and marking the rebalance as fallback.";
+    try { ({ eth: liveEth } = await fetchLivePrices()); } catch { liveEth = 0; }
+
+    // If neither CoinGecko nor a previously stored holding price is available,
+    // abort rather than fabricate a price. Real user capital must never be
+    // rebalanced against an invented ETH/USD rate.
+    if (!liveEth || liveEth <= 0) {
+      const lastKnown = holdings.find((h) => h.symbol === "ETH")?.price ?? 0;
+      if (lastKnown > 0) {
+        liveEth = lastKnown;
+        fallbackNote = "Live price feed unavailable. Using the most recent live price captured during the previous rebalance.";
+      } else {
+        setPhase("Blocked: no live ETH price is available. Try again when CoinGecko responds — no synthetic price is used.");
+        setRunning(false);
+        return;
+      }
     }
 
     setPhase("Calling Portfolio Rebalance API via x402…");

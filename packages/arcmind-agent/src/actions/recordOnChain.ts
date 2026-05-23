@@ -71,21 +71,23 @@ export const recordOnChainAction: Action = {
       ?? "https://rpc.testnet.arc-node.thecanteenapp.com/v1/public";
 
     if (!privKey || !agentIdHex || !registryAddr) {
-      runtime.logger.warn("[arcmind] paper mode — ARC_PRIVATE_KEY / ARC_AGENT_ID / ARC_REGISTRY_ADDRESS missing");
+      runtime.logger.warn("[arcmind] on-chain anchor SKIPPED — ARC_PRIVATE_KEY / ARC_AGENT_ID / ARC_REGISTRY_ADDRESS missing");
       return {
-        success: true,
-        text: `Paper-mode decision recorded: ${decisionHash}`,
-        data: { mode: "paper", decisionHash, txHash: null },
+        success: false,
+        error: "keys_missing",
+        text: `On-chain anchor skipped (keys missing). Decision hash: ${decisionHash}`,
+        data: { mode: "paper", decisionHash, txHash: null, reason: "keys_missing" },
       };
     }
 
     const ethers = await loadEthers();
     if (!ethers) {
-      runtime.logger.warn("[arcmind] ethers not installed — skipping on-chain write");
+      runtime.logger.warn("[arcmind] ethers not installed — on-chain anchor SKIPPED");
       return {
-        success: true,
-        text: `Paper-mode (no ethers): ${decisionHash}`,
-        data: { mode: "paper", decisionHash, txHash: null, reason: "ethers package missing" },
+        success: false,
+        error: "ethers_missing",
+        text: `On-chain anchor skipped (ethers not installed). Decision hash: ${decisionHash}`,
+        data: { mode: "paper", decisionHash, txHash: null, reason: "ethers_missing" },
       };
     }
 

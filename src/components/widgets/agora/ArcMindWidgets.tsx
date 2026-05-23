@@ -10,7 +10,6 @@ import { ArcMindAlgorithmProfile } from "./ArcMindAlgorithmProfile";
 import type { Workspace } from "../../../types";
 import { useLocalStore } from "../../../lib/storage";
 import { useAppState } from "../../../app-state";
-import { deterministicScore } from "../../../lib/util-hash";
 import {
   isAgoraEscrowConfigured, isAgoraRegistryConfigured,
   stakeToEscrow, registerArcAgent, recordArcDecision, resolveArcDecision,
@@ -135,12 +134,6 @@ interface CopyPosition {
 
 interface ArcDecisionRaw { decision: "BUY" | "SELL" | "HOLD"; ethPrice: number; ts: string; txHash?: string }
 
-const LOCAL_SEED_DECISIONS: ArcDecisionRaw[] = [
-  { decision: "BUY", ethPrice: 3340, ts: new Date(Date.now() - 12 * 60_000).toISOString(), txHash: "local-seed" },
-  { decision: "HOLD", ethPrice: 3315, ts: new Date(Date.now() - 42 * 60_000).toISOString(), txHash: "local-seed" },
-  { decision: "SELL", ethPrice: 3290, ts: new Date(Date.now() - 72 * 60_000).toISOString(), txHash: "local-seed" },
-];
-
 function useEthPrice(): number {
   const [price, setPrice] = useState(0);
   useEffect(() => {
@@ -159,24 +152,35 @@ function useEthPrice(): number {
   return price;
 }
 
-function useArcDecisionStats(workspaceId: string) {
+function useArcDecisionStats(_workspaceId: string) {
   const [bias, setBias] = useState(0);
   const [stats, setStats] = useState<{ ret30d: number; sharpe: number; winRate: number } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`${SERVER}/api/arc-decisions`, { signal: AbortSignal.timeout(6_000) })
-      .then(r => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((d: { decisions: ArcDecisionRaw[] }) => {
-        let decisions = d.decisions ?? [];
-        if (decisions.length < 2) decisions = LOCAL_SEED_DECISIONS;
+        const decisions = d.decisions ?? [];
         const last = decisions[0];
         if (last?.decision === "BUY") setBias(1);
         else if (last?.decision === "SELL") setBias(-1);
         else setBias(0);
-        if (decisions.length < 2) return;
-        let wins = 0, count = 0;
+
+        // Need at least 2 real on-chain decisions before computing stats.
+        // No synthetic fallback — surface null so the UI shows an empty state.
+        if (decisions.length < 2) {
+          setStats(null);
+          return;
+        }
+        let wins = 0;
+        let count = 0;
         for (let i = 0; i < decisions.length - 1; i++) {
-          const curr = decisions[i], next = decisions[i + 1];
+          const curr = decisions[i];
+          const next = decisions[i + 1];
           const priceUp = next.ethPrice > curr.ethPrice;
           if (curr.decision === "HOLD") continue;
           if ((curr.decision === "BUY" && priceUp) || (curr.decision === "SELL" && !priceUp)) wins++;
@@ -184,21 +188,28 @@ function useArcDecisionStats(workspaceId: string) {
         }
         const first = decisions[decisions.length - 1];
         const priceChangePct = first.ethPrice > 0 ? ((decisions[0].ethPrice - first.ethPrice) / first.ethPrice) * 100 : 0;
-        const winRate = count > 0 ? (wins / count) * 100 : deterministicScore(workspaceId + "wr", 60, 80);
+        if (count < 1) {
+          // Cannot grade any decision yet — show empty state instead of a fabricated win rate.
+          setStats(null);
+          return;
+        }
+        const winRate = (wins / count) * 100;
         setStats({
           ret30d: parseFloat(priceChangePct.toFixed(1)),
-          sharpe: parseFloat((Math.max(0.3, winRate / 30)).toFixed(1)),
+          sharpe: parseFloat(Math.max(0.3, winRate / 30).toFixed(1)),
           winRate: parseFloat(winRate.toFixed(0)),
         });
+        setLoadError(null);
       })
-      .catch(() => {
-        const decisions = LOCAL_SEED_DECISIONS;
-        setBias(decisions[0].decision === "BUY" ? 1 : decisions[0].decision === "SELL" ? -1 : 0);
-        setStats({ ret30d: 1.5, sharpe: 2.2, winRate: 67 });
+      .catch((err: Error) => {
+        // No synthetic stats on error — surface empty state + reason.
+        setStats(null);
+        setBias(0);
+        setLoadError(err.message ?? "Decision feed unavailable");
       });
-  }, [workspaceId]);
+  }, []);
 
-  return { bias, stats };
+  return { bias, stats, loadError };
 }
 
 export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }) {
@@ -305,31 +316,32 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
       });
     }
 
-    // Build position from last on-chain ArcMind decision
+    // Build position from the latest live on-chain ArcMind decision.
+    // If no live BUY/SELL decision is available, refuse to open the position —
+    // we never invent an entry price for real user capital.
     let pos: CopyPosition[];
+    let activeDecision: ArcDecisionRaw | undefined;
     try {
       const decRes = await fetch(`${SERVER}/api/arc-decisions`, { signal: AbortSignal.timeout(6_000) });
-      const decData = await decRes.json() as { decisions: ArcDecisionRaw[] };
-      const lastBuy = decData.decisions?.find(d => d.decision === "BUY");
-      const lastSell = decData.decisions?.find(d => d.decision === "SELL");
-      const activeDecision = lastBuy ?? lastSell;
-      if (activeDecision && activeDecision.ethPrice > 0) {
-        const side = activeDecision.decision === "BUY" ? "LONG" : "SHORT";
-        const size = (amt * 0.8) / activeDecision.ethPrice;
-        pos = [{ asset: "ETH/USDC", side, entry: activeDecision.ethPrice, size, pnl: 0, ts: now }];
-      } else {
-        const seedDecision = LOCAL_SEED_DECISIONS.find(d => d.decision !== "HOLD") ?? LOCAL_SEED_DECISIONS[0];
-        const side = seedDecision.decision === "SELL" ? "SHORT" : "LONG";
-        const size = (amt * 0.8) / seedDecision.ethPrice;
-        fallbackNote = fallbackNote ?? "No live ArcMind BUY/SELL decision is available. A local seed decision was used and marked as fallback.";
-        pos = [{ asset: "ETH/USDC", side, entry: seedDecision.ethPrice, size, pnl: 0, ts: now }];
+      if (decRes.ok) {
+        const decData = await decRes.json() as { decisions: ArcDecisionRaw[] };
+        const lastBuy = decData.decisions?.find((d) => d.decision === "BUY");
+        const lastSell = decData.decisions?.find((d) => d.decision === "SELL");
+        activeDecision = lastBuy ?? lastSell;
       }
     } catch {
-      const seedDecision = LOCAL_SEED_DECISIONS.find(d => d.decision !== "HOLD") ?? LOCAL_SEED_DECISIONS[0];
-      const side = seedDecision.decision === "SELL" ? "SHORT" : "LONG";
-      const size = (amt * 0.8) / seedDecision.ethPrice;
-      fallbackNote = fallbackNote ?? "Could not load live ArcMind decisions. A local seed decision was used and marked as fallback.";
-      pos = [{ asset: "ETH/USDC", side, entry: seedDecision.ethPrice, size, pnl: 0, ts: now }];
+      // network error — fall through to the no-decision branch below
+    }
+
+    if (!activeDecision || activeDecision.ethPrice <= 0) {
+      setStakeErr("No live ArcMind BUY/SELL decision is available right now. Try again after the next on-chain decision (every 30 min). No stake was placed.");
+      setStaking(false);
+      return;
+    }
+    {
+      const side = activeDecision.decision === "BUY" ? "LONG" : "SHORT";
+      const size = (amt * 0.8) / activeDecision.ethPrice;
+      pos = [{ asset: "ETH/USDC", side, entry: activeDecision.ethPrice, size, pnl: 0, ts: now }];
     }
 
     setPositions(pos);
@@ -864,32 +876,28 @@ function useArcMindTraces(): { traces: Trace[]; loading: boolean } {
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     fetch(`${SERVER}/api/arc-decisions`, { signal: AbortSignal.timeout(8_000) })
-      .then(r => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((d: { decisions: ArcDecisionRaw[] }) => {
-        let decisions = d.decisions ?? [];
-        const live = decisions.length > 0;
-        if (!decisions.length) decisions = LOCAL_SEED_DECISIONS;
+        const decisions = d.decisions ?? [];
+        // Only render real, on-chain ArcMind decisions. No synthetic fallback —
+        // we never charge $0.01 to unlock invented traces.
         const mapped: Trace[] = decisions.slice(0, 8).map((dec, i) => ({
-          id: `${live ? "live" : "local"}-${i}`,
+          id: `live-${i}`,
           title: `${dec.decision} — ETH @ $${dec.ethPrice?.toLocaleString() ?? "?"}`,
           signal: `ETH $${dec.ethPrice} · ${new Date(dec.ts).toLocaleString()}`,
           decision: `${dec.decision} ETH/USDC @ $${dec.ethPrice}`,
-          rationale: live ? "Autonomous ArcMind decision recorded on Arc L1 via ArcMindRegistry.recordDecision(). Based on Hyperliquid OI + ETH price momentum." : "Local fallback trace. It mirrors the live schema, but is marked local because the registry has no live decisions yet.",
-          outcome: live ? (dec.txHash ? "On-chain" : "Pending resolution") : "Local fallback",
+          rationale: "Autonomous ArcMind decision recorded on Arc L1 via ArcMindRegistry.recordDecision(). Based on Hyperliquid OI + ETH price momentum.",
+          outcome: dec.txHash ? "On-chain" : "Pending resolution",
           price: 0.01,
         }));
         setTraces(mapped);
       })
       .catch(() => {
-        setTraces(LOCAL_SEED_DECISIONS.map((dec, i) => ({
-          id: `local-${i}`,
-          title: `${dec.decision} - ETH @ $${dec.ethPrice.toLocaleString()}`,
-          signal: `ETH $${dec.ethPrice} - ${new Date(dec.ts).toLocaleString()}`,
-          decision: `${dec.decision} ETH/USDC @ $${dec.ethPrice}`,
-          rationale: "Local fallback trace. Live /api/arc-decisions is unavailable, so no on-chain claim is made.",
-          outcome: "Local fallback",
-          price: 0.01,
-        })));
+        // Live feed unavailable — show empty state, never invent traces.
+        setTraces([]);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -1069,8 +1077,10 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
       />
 
       {tracesLoading && <div className="text-xs text-gray-500 text-center py-2">Loading on-chain traces…</div>}
-      {!tracesLoading && !hasLiveTraces && (
-        <div className="text-[10px] text-amber-300 text-center">Local fallback traces are active: live ArcMind decisions are unavailable, and no on-chain claim is made.</div>
+      {!tracesLoading && displayTraces.length === 0 && (
+        <div className="text-[11px] text-gray-400 text-center py-3 border border-white/5 rounded-lg bg-white/[0.02]">
+          No on-chain ArcMind decisions yet. The agent records a decision every 30 minutes — check back after the next tick.
+        </div>
       )}
       {!tracesLoading && hasLiveTraces && (
         <div className="text-[10px] text-green-600 text-center">{displayTraces.length} real on-chain ArcMind decisions</div>
