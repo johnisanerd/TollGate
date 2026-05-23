@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Brain, TrendingUp, Search } from "lucide-react";
+import { ExternalLink, Brain, TrendingUp, Search, ShieldCheck } from "lucide-react";
 import type { Workspace } from "../../../types";
 import { getTopMarkets, polymarketUrl, type PolymarketMarket } from "../../../lib/polymarket";
+import { fetchNativePredictions, isPredictionOracleConfigured, type NativePrediction } from "../../../lib/predictionOracle";
 
 function fmtUsd(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "—";
@@ -24,6 +25,26 @@ export function ArcPredictionsWidget({ workspace: _workspace }: Props) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [native, setNative] = useState<NativePrediction[] | null>(null);
+  const [nativeReason, setNativeReason] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadNative() {
+      const r = await fetchNativePredictions();
+      if (cancelled) return;
+      if (r.ok) {
+        setNative(r.predictions);
+        setNativeReason(null);
+      } else {
+        setNative([]);
+        setNativeReason(r.reason ?? "unavailable");
+      }
+    }
+    void loadNative();
+    const id = setInterval(loadNative, 120_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +105,8 @@ export function ArcPredictionsWidget({ workspace: _workspace }: Props) {
           />
         </div>
       </div>
+
+      <NativeArcPredictions native={native} reason={nativeReason} configured={isPredictionOracleConfigured()} />
 
       {error && (
         <div style={{
@@ -153,5 +176,111 @@ export function ArcPredictionsWidget({ workspace: _workspace }: Props) {
         Data: Polymarket Gamma API · cached 60s · refresh every 90s · no Polymarket data is fabricated.
       </div>
     </div>
+  );
+}
+
+const ARC_EXPLORER = "https://testnet.arcscan.app";
+
+function NativeArcPredictions({ native, reason, configured }: {
+  native: NativePrediction[] | null; reason: string | null; configured: boolean;
+}) {
+  if (!configured) {
+    return (
+      <div style={{
+        padding: 14, borderRadius: 14,
+        background: "rgba(34,211,238,0.04)",
+        border: "1px dashed rgba(34,211,238,0.20)",
+        color: "#9fb0c8", fontSize: ".72rem",
+      }}>
+        <ShieldCheck size={12} style={{ verticalAlign: "middle", marginRight: 6, color: "#22d3ee" }} />
+        Native Arc <code>PredictionOracle</code> not configured.
+        Set <code>VITE_ARC_PREDICTION_ORACLE</code> after running
+        <code> contracts/scripts/seed-prediction-markets.cjs</code> and three on-chain
+        questions will appear here alongside Polymarket.
+      </div>
+    );
+  }
+
+  if (native === null) {
+    return (
+      <div style={{ color: "#94a3b8", fontSize: ".72rem", padding: "10px 0", textAlign: "center" }}>
+        Indexing on-chain prediction oracle…
+      </div>
+    );
+  }
+
+  if (native.length === 0 && reason) {
+    return (
+      <div style={{
+        padding: "10px 14px", borderRadius: 10,
+        background: "rgba(251,113,133,0.06)", border: "1px solid rgba(251,113,133,0.22)",
+        color: "#fda4af", fontSize: ".72rem",
+      }}>
+        Native Arc oracle reachable but returned: <code>{reason}</code>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      background: "rgba(8,13,25,0.94)",
+      border: "1px solid rgba(34,211,238,0.20)",
+      borderRadius: 14, padding: 14,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <ShieldCheck size={14} style={{ color: "#22d3ee" }} />
+        <div style={{ fontSize: ".7rem", color: "#22d3ee", textTransform: "uppercase", letterSpacing: ".07em", fontWeight: 700 }}>
+          Native Arc predictions · {native.length} on-chain question{native.length === 1 ? "" : "s"}
+        </div>
+      </div>
+      <div style={{ display: "grid", gap: 8 }}>
+        {native.map((p) => (
+          <div key={p.id} style={{
+            padding: 12, borderRadius: 11,
+            background: "rgba(255,255,255,0.025)",
+            border: `1px solid ${
+              p.outcome === "YES" ? "rgba(34,197,94,0.32)"
+              : p.outcome === "NO" ? "rgba(251,113,133,0.32)"
+              : "rgba(255,255,255,0.06)"
+            }`,
+          }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: "#fff", fontSize: ".82rem", fontWeight: 600 }}>{p.question}</div>
+                <div style={{ fontSize: ".62rem", color: "#64748b", fontFamily: "monospace", marginTop: 2 }}>
+                  id {p.id.slice(0, 10)}…{p.id.slice(-6)} · registered {new Date(p.registeredAt).toLocaleDateString()}
+                </div>
+                {p.citationUri && (
+                  <a href={p.citationUri} target="_blank" rel="noreferrer"
+                    style={{ fontSize: ".64rem", color: "#60a5fa", textDecoration: "none", marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    citation <ExternalLink size={9} />
+                  </a>
+                )}
+              </div>
+              <OutcomeBadge outcome={p.outcome} />
+            </div>
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", justifyContent: "space-between", fontSize: ".62rem", color: "#94a3b8" }}>
+              <span>resolver: <a href={`${ARC_EXPLORER}/address/${p.admin}`} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", textDecoration: "none", fontFamily: "monospace" }}>{p.admin.slice(0, 6)}…{p.admin.slice(-4)}</a></span>
+              {p.resolved && p.resolvedAt && <span>resolved {new Date(p.resolvedAt).toLocaleDateString()}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OutcomeBadge({ outcome }: { outcome: NativePrediction["outcome"] }) {
+  const tone = outcome === "YES" ? { bg: "rgba(34,197,94,0.18)", fg: "#22c55e", border: "rgba(34,197,94,0.32)" }
+             : outcome === "NO" ? { bg: "rgba(251,113,133,0.18)", fg: "#fb7185", border: "rgba(251,113,133,0.32)" }
+             : { bg: "rgba(148,163,184,0.12)", fg: "#94a3b8", border: "rgba(148,163,184,0.24)" };
+  return (
+    <span style={{
+      padding: "3px 8px", borderRadius: 6, fontSize: ".62rem", fontWeight: 700,
+      background: tone.bg, color: tone.fg, border: `1px solid ${tone.border}`,
+      whiteSpace: "nowrap", flexShrink: 0,
+    }}>
+      {outcome}
+    </span>
   );
 }

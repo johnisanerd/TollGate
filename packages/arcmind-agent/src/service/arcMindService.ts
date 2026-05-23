@@ -16,6 +16,7 @@ import { coingeckoPriceProvider } from "../providers/coingeckoPriceProvider.js";
 import { hyperliquidOiProvider } from "../providers/hyperliquidOiProvider.js";
 import { leaderFeedProvider } from "../providers/leaderFeedProvider.js";
 import { decideEthDirectionAction } from "../actions/decideEthDirection.js";
+import { detectRegimeAction } from "../actions/regimeAction.js";
 import { recordOnChainAction } from "../actions/recordOnChain.js";
 import { decisionAccuracyEvaluator } from "../evaluators/decisionAccuracyEvaluator.js";
 import { strategyDegradationEvaluator } from "../evaluators/degradationEvaluator.js";
@@ -47,6 +48,11 @@ export const arcMindService: Service = {
         ...(feed.values ?? {}),
       };
       state.providers = [price.text, oi.text, feed.text].filter(Boolean).join("\n");
+
+      // Classify regime first (RFB 04). Mutates state.values with `regime`.
+      if (await detectRegimeAction.validate(runtime, undefined, state)) {
+        await detectRegimeAction.handler(runtime, undefined, state);
+      }
 
       // Decide.
       if (!(await decideEthDirectionAction.validate(runtime, undefined, state))) {
