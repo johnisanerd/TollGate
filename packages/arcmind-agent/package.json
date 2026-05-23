@@ -1,0 +1,27 @@
+{
+  "name": "@arcmind/agent",
+  "version": "0.1.0",
+  "description": "ArcMind autonomous trading agent — ElizaOS-compatible Actions/Providers/Evaluators/Service architecture. Drop in @elizaos/core to upgrade to the full framework.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./character": "./src/character.ts",
+    "./providers": "./src/providers/index.ts",
+    "./actions": "./src/actions/index.ts",
+    "./evaluators": "./src/evaluators/index.ts",
+    "./service": "./src/service/arcMindService.ts"
+  },
+  "files": ["src", "README.md"],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["arcmind", "elizaos", "ai-agent", "trading-agent", "erc-8183", "erc-8004", "arc-l1"],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
