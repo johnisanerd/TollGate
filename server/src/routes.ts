@@ -33,8 +33,34 @@ import { arcAgentLoop, getArcAgentLoopStatus } from "./arc-agent-loop.js";
 import { fetchEthMarketPrice } from "./market-data.js";
 import { buildArcReadinessReport } from "./arc-readiness.js";
 import { buildArcSignalSourceRadar } from "./arc-signal-sources.js";
+import {
+  allowControlSource,
+  approveLatestControlDecision,
+  buildLatestControlDecision,
+  cancelControlExecution,
+  developerControlStatus,
+  getArcControlState,
+  mutateControlPosition,
+  refreshControlSources,
+  rejectLatestControlDecision,
+  retryControlExecution,
+  runControlAction,
+  setControlActionAllowed,
+  setRiskGuardMode,
+  setControlStrategy,
+  topUpAgentBudget,
+  triggerRiskEmergencyExit,
+  updateAgentPolicy,
+  withdrawAgentBudget,
+  type AgentAction,
+  type ControlSource,
+  type FundingMode,
+} from "./arc-control.js";
 import { uploadToOg } from "./og-upload.js";
 import { runOgInference } from "./og-compute.js";
+import { routeLlmCall, isLlmConfigured } from "./llm.js";
+import { fetchAllTickers } from "./exchanges.js";
+import { buildSnapshot, onArbSnapshot, startArbScanner } from "./arb-scanner.js";
 import {
   agentById,
   agents,
@@ -165,8 +191,89 @@ apiRouter.post("/og/compute", async (req: Request, res: Response) => {
   if (!result.ok && result.reason === "compute_not_configured") {
     return res.status(503).json({ ok: false, reason: "compute_not_configured" });
   }
-  recordActivity("og.upload", "0g");
+  recordActivity("og.compute", "0g");
   if (!result.ok) return res.status(502).json({ ok: false, reason: "error", message: result.message });
+  res.json(result);
+});
+
+// ─── LLM proxy (server-side; API keys never leave the server) ───────────────
+
+const llmLimiter = rateLimit({
+  windowMs: 60_000, max: 20,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: "rate_limit_exceeded", retryAfterSec: 60, scope: "/api/llm" },
+});
+
+apiRouter.get("/llm/status", (_req: Request, res: Response) => {
+  res.json({ configured: isLlmConfigured() });
+});
+
+// ─── Multi-exchange ticker proxy (OKX / Coinbase / Binance / Hyperliquid) ───
+
+const exchangeLimiter = rateLimit({
+  windowMs: 60_000, max: 60,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: "rate_limit_exceeded", retryAfterSec: 60, scope: "/api/exchanges" },
+});
+
+apiRouter.get("/exchanges/tickers", exchangeLimiter, async (req: Request, res: Response) => {
+  const symbol = typeof req.query["symbol"] === "string" && /^[A-Z0-9]+\/[A-Z0-9]+$/.test(req.query["symbol"])
+    ? req.query["symbol"]
+    : "ETH/USDC";
+  const tickers = await fetchAllTickers(symbol);
+  res.json({ symbol, tickers, ts: Date.now() });
+});
+
+// ─── Arbitrage scanner — REST snapshot + SSE stream ─────────────────────────
+
+apiRouter.get("/arb/snapshot", exchangeLimiter, async (req: Request, res: Response) => {
+  const symbol = typeof req.query["symbol"] === "string" && /^[A-Z0-9]+\/[A-Z0-9]+$/.test(req.query["symbol"])
+    ? req.query["symbol"]
+    : "ETH/USDC";
+  const snap = await buildSnapshot(symbol);
+  res.json(snap);
+});
+
+// Boot the scanner so SSE clients get periodic snapshots without needing to poll.
+startArbScanner();
+
+apiRouter.get("/arb/stream", (req: Request, res: Response) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+
+  // Send a first snapshot immediately so the client doesn't wait up to 10s.
+  void buildSnapshot().then((snap) => {
+    res.write(`data: ${JSON.stringify({ type: "snapshot", snap })}\n\n`);
+  });
+
+  const unsub = onArbSnapshot((snap) => {
+    res.write(`data: ${JSON.stringify({ type: "snapshot", snap })}\n\n`);
+  });
+
+  const keepalive = setInterval(() => res.write(": ping\n\n"), 20_000);
+  req.on("close", () => { unsub(); clearInterval(keepalive); });
+});
+
+apiRouter.post("/llm/route", llmLimiter, async (req: Request, res: Response) => {
+  const prompt = typeof req.body?.prompt === "string" ? req.body.prompt : "";
+  if (!prompt) return res.status(400).json({ ok: false, reason: "empty_prompt" });
+  if (!isLlmConfigured()) {
+    return res.status(503).json({
+      ok: false,
+      reason: "no_provider_configured",
+      message: "Set OPENROUTER_API_KEY or ANTHROPIC_API_KEY in server env.",
+    });
+  }
+  const result = await routeLlmCall({
+    prompt,
+    system: typeof req.body?.system === "string" ? req.body.system : undefined,
+    model: typeof req.body?.model === "string" ? req.body.model : undefined,
+    maxTokens: typeof req.body?.maxTokens === "number" ? req.body.maxTokens : undefined,
+    temperature: typeof req.body?.temperature === "number" ? req.body.temperature : undefined,
+  });
+  if (!result.ok) return res.status(502).json(result);
   res.json(result);
 });
 
@@ -379,6 +486,24 @@ const ARC_DEPLOYMENT_CANDIDATES = [
   join(process.cwd(), "contracts/deployments/arcTestnet.json"),
 ];
 
+type ArcControlLayerDeployment = {
+  operator?: string;
+  agentTreasury?: string;
+  strategyVault?: string;
+  riskGuard?: string;
+  receiptRegistry?: string;
+  txHashes?: Record<string, string | null>;
+  deployedAt?: string;
+};
+
+type ArcDeployment = {
+  registry?: string;
+  escrow?: string;
+  usdc?: string;
+  explorer?: string;
+  controlLayer?: ArcControlLayerDeployment;
+};
+
 function readArcDecisionLog(): Record<string, unknown>[] {
   if (!existsSync(ARC_LOG)) return [];
   try {
@@ -392,14 +517,38 @@ function readArcDecisionLog(): Record<string, unknown>[] {
   }
 }
 
-function readArcDeployment(): { registry?: string; escrow?: string } {
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function readArcDeployment(): ArcDeployment {
   for (const file of ARC_DEPLOYMENT_CANDIDATES) {
     if (!existsSync(file)) continue;
     try {
-      const data = JSON.parse(readFileSync(file, "utf8")) as { registry?: unknown; escrow?: unknown };
+      const data = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+      const control = typeof data.controlLayer === "object" && data.controlLayer !== null
+        ? data.controlLayer as Record<string, unknown>
+        : {};
+      const txHashes = typeof control.txHashes === "object" && control.txHashes !== null
+        ? control.txHashes as Record<string, string | null>
+        : undefined;
       return {
-        registry: typeof data.registry === "string" ? data.registry : undefined,
-        escrow: typeof data.escrow === "string" ? data.escrow : undefined,
+        registry: stringField(data, "registry"),
+        escrow: stringField(data, "escrow"),
+        usdc: stringField(data, "usdc"),
+        explorer: stringField(data, "explorer"),
+        controlLayer: Object.keys(control).length
+          ? {
+            operator: stringField(control, "operator"),
+            agentTreasury: stringField(control, "agentTreasury"),
+            strategyVault: stringField(control, "strategyVault"),
+            riskGuard: stringField(control, "riskGuard"),
+            receiptRegistry: stringField(control, "receiptRegistry"),
+            txHashes,
+            deployedAt: stringField(control, "deployedAt"),
+          }
+          : undefined,
       };
     } catch {
       return {};
@@ -648,6 +797,305 @@ apiRouter.get("/arc-live", (_req: Request, res: Response) => {
     auditTrail,
     alerts,
     decisionReplay,
+    ts: new Date().toISOString(),
+  });
+});
+
+// ─── ArcMind Control Layer product API ───────────────────────────────────────
+
+function parseAgentAction(v: unknown): AgentAction | null {
+  const value = typeof v === "string" ? v : "";
+  return ["READ_SOURCE", "BUILD_DECISION", "COPY", "HOLD", "REDUCE", "STOP", "MOVE_TO_USDC", "RUN_ARB_CHECK", "UNLOCK_REASONING"].includes(value)
+    ? value as AgentAction
+    : null;
+}
+
+function parseFundingMode(v: unknown): FundingMode | undefined {
+  const value = typeof v === "string" ? v : "";
+  return ["agent_treasury", "user_wallet", "user_strategy_vault", "free_public"].includes(value)
+    ? value as FundingMode
+    : undefined;
+}
+
+function liveTxContext(req: Request) {
+  return {
+    txHash: typeof req.body?.txHash === "string" ? req.body.txHash : undefined,
+    walletAddress: typeof req.body?.walletAddress === "string" ? req.body.walletAddress : undefined,
+  };
+}
+
+function writeStatus(state: { receipts?: Array<{ liveStatus?: string }>; executions?: Array<{ status?: string }> }) {
+  const latestReceipt = state.receipts?.[0];
+  const latestExecution = state.executions?.[0];
+  if (latestReceipt?.liveStatus === "blocked" || latestExecution?.status === "blocked") return "blocked";
+  if (latestExecution?.status === "failed") return "failed";
+  return "live";
+}
+
+apiRouter.get("/arc/control/status", (_req: Request, res: Response) => {
+  res.json({ ok: true, state: getArcControlState(), ts: new Date().toISOString() });
+});
+
+apiRouter.get("/arc/control/budget", (_req: Request, res: Response) => {
+  const state = getArcControlState();
+  res.json({ ok: true, budget: state.budget, policy: state.policy, ts: new Date().toISOString() });
+});
+
+apiRouter.post("/arc/control/budget/top-up", (req: Request, res: Response) => {
+  const state = topUpAgentBudget(req.body?.amountUsd, liveTxContext(req));
+  recordActivity("arc.control.budget.topup", "agora");
+  const status = writeStatus(state);
+  res.json({ ok: status === "live", status, reason: status === "blocked" ? "live_tx_required" : undefined, state, budget: state.budget, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/budget/update-policy", (req: Request, res: Response) => {
+  const state = updateAgentPolicy(req.body ?? {});
+  recordActivity("arc.control.policy.update", "agora");
+  res.json({ ok: true, state, budget: state.budget, policy: state.policy, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/policy", (req: Request, res: Response) => {
+  const state = updateAgentPolicy(req.body ?? {});
+  recordActivity("arc.control.policy.update", "agora");
+  res.json({ ok: true, state, budget: state.budget, policy: state.policy, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/budget/withdraw", (req: Request, res: Response) => {
+  const state = withdrawAgentBudget(req.body?.amountUsd, liveTxContext(req));
+  recordActivity("arc.control.budget.withdraw", "agora");
+  const status = writeStatus(state);
+  res.json({ ok: status === "live", status, reason: status === "blocked" ? "live_tx_required" : undefined, state, budget: state.budget, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.get("/arc/control/sources", (_req: Request, res: Response) => {
+  const state = getArcControlState();
+  res.json({ ok: true, sources: state.sources, policy: state.policy, ts: new Date().toISOString() });
+});
+
+apiRouter.post("/arc/control/sources/refresh", async (_req: Request, res: Response) => {
+  const updates: Partial<ControlSource>[] = [];
+  const marketPrice = await fetchEthMarketPrice();
+  updates.push({
+    id: "market_price",
+    status: marketPrice.price ? "live" : "unavailable",
+    contribution: marketPrice.price ? 35 : 0,
+    signal: marketPrice.price
+      ? `ETH quote ${marketPrice.price.toLocaleString()} from ${marketPrice.provider ?? "public market source"}.`
+      : "ETH quote unavailable; agent actions cannot claim live price.",
+  });
+  const radar = buildArcSignalSourceRadar(process.env);
+  const configured = radar.sources.filter((source) => source.status === "configured").length;
+  const needsKey = radar.sources.filter((source) => source.status === "needs_key").length;
+  updates.push({
+    id: "social_news",
+    status: configured > 0 ? "live" : needsKey > 0 ? "needs_key" : "unavailable",
+    contribution: configured > 0 ? Math.min(25, configured * 4) : 0,
+    signal: configured > 0
+      ? `${configured} Apify-backed social/news sources configured.`
+      : "Social/news source layer needs APIFY_TOKEN or configured source mode.",
+  });
+  let leaderLive = false;
+  if (process.env.ARC_LEADER_FEED_URL && /^https?:\/\//i.test(process.env.ARC_LEADER_FEED_URL)) {
+    try {
+      const feedRes = await fetch(process.env.ARC_LEADER_FEED_URL, { signal: AbortSignal.timeout(5_000) });
+      if (feedRes.ok) {
+        const payload = await feedRes.json() as unknown;
+        leaderLive = Array.isArray(payload) ? payload.length > 0 : typeof payload === "object" && payload !== null;
+      }
+    } catch { /* leader remains unavailable */ }
+  }
+  updates.push({
+    id: "leader_feed",
+    status: leaderLive ? "live" : "unavailable",
+    contribution: leaderLive ? 12 : 0,
+    signal: leaderLive
+      ? "Verified leader feed returned sourced data for this refresh."
+      : "No verified leader feed configured; SignalGuard mode stays active.",
+  });
+  const state = refreshControlSources(updates);
+  recordActivity("arc.control.sources.refresh", "agora");
+  res.json({ ok: true, state, sources: state.sources, decision: state.latestDecision, execution: state.executions[0] ?? null, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/sources/allow", (req: Request, res: Response) => {
+  const sourceId = typeof req.body?.sourceId === "string" ? req.body.sourceId : "";
+  if (!sourceId) return res.status(400).json({ error: "sourceId_required" });
+  const state = allowControlSource(sourceId, true);
+  res.json({ ok: true, state, policy: state.policy, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/sources/block", (req: Request, res: Response) => {
+  const sourceId = typeof req.body?.sourceId === "string" ? req.body.sourceId : "";
+  if (!sourceId) return res.status(400).json({ error: "sourceId_required" });
+  const state = allowControlSource(sourceId, false);
+  res.json({ ok: true, state, policy: state.policy, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/actions/allow", (req: Request, res: Response) => {
+  const action = parseAgentAction(req.body?.action);
+  if (!action) return res.status(400).json({ error: "action_required" });
+  const state = setControlActionAllowed(action, true);
+  res.json({ ok: true, state, policy: state.policy, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/actions/block", (req: Request, res: Response) => {
+  const action = parseAgentAction(req.body?.action);
+  if (!action) return res.status(400).json({ error: "action_required" });
+  const state = setControlActionAllowed(action, false);
+  res.json({ ok: true, state, policy: state.policy, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.get("/arc/control/strategies", (_req: Request, res: Response) => {
+  const state = getArcControlState();
+  res.json({ ok: true, strategies: state.strategies, decision: state.latestDecision, ts: new Date().toISOString() });
+});
+
+apiRouter.post("/arc/control/strategies/enable", (req: Request, res: Response) => {
+  const strategyId = typeof req.body?.strategyId === "string" ? req.body.strategyId : "";
+  if (!strategyId) return res.status(400).json({ error: "strategyId_required" });
+  const state = setControlStrategy(strategyId, true, typeof req.body?.autoRun === "boolean" ? req.body.autoRun : undefined);
+  res.json({ ok: true, state, strategies: state.strategies, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/strategies/disable", (req: Request, res: Response) => {
+  const strategyId = typeof req.body?.strategyId === "string" ? req.body.strategyId : "";
+  if (!strategyId) return res.status(400).json({ error: "strategyId_required" });
+  const state = setControlStrategy(strategyId, false);
+  res.json({ ok: true, state, strategies: state.strategies, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/strategies/run-once", (req: Request, res: Response) => {
+  const strategyId = typeof req.body?.strategyId === "string" ? req.body.strategyId : undefined;
+  const action = strategyId === "arbwatcher" ? "RUN_ARB_CHECK" : "BUILD_DECISION";
+  const amountUsd = strategyId === "arbwatcher" ? 0.05 : 0;
+  const fundingMode: FundingMode = strategyId === "arbwatcher" ? "agent_treasury" : "free_public";
+  const state = runControlAction(action, { amountUsd, fundingMode, strategyId });
+  res.json({ ok: true, state, execution: state.executions[0] ?? null, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.get("/arc/control/decision/latest", (_req: Request, res: Response) => {
+  const state = getArcControlState();
+  res.json({ ok: true, decision: state.latestDecision, ts: new Date().toISOString() });
+});
+
+apiRouter.post("/arc/control/decision/build", (_req: Request, res: Response) => {
+  const state = buildLatestControlDecision();
+  res.json({ ok: true, state, decision: state.latestDecision, execution: state.executions[0] ?? null, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/decision/approve", (req: Request, res: Response) => {
+  const stateNow = getArcControlState();
+  const action = parseAgentAction(req.body?.action) ?? stateNow.latestDecision.action;
+  const fundingMode = parseFundingMode(req.body?.fundingMode)
+    ?? (["COPY", "HOLD", "REDUCE", "STOP", "MOVE_TO_USDC"].includes(action) ? "user_strategy_vault" : "agent_treasury");
+  const amountUsd = typeof req.body?.amountUsd !== "undefined" ? req.body.amountUsd : action === "RUN_ARB_CHECK" ? 0.05 : 0;
+  const state = approveLatestControlDecision({ action, amountUsd, fundingMode });
+  res.json({ ok: true, state, execution: state.executions[0] ?? null, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/decision/reject", (_req: Request, res: Response) => {
+  const state = rejectLatestControlDecision();
+  res.json({ ok: true, state, execution: state.executions[0] ?? null, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.get("/arc/control/execution", (_req: Request, res: Response) => {
+  const state = getArcControlState();
+  res.json({ ok: true, executions: state.executions, ts: new Date().toISOString() });
+});
+
+apiRouter.post("/arc/control/execution/cancel", (req: Request, res: Response) => {
+  const executionId = typeof req.body?.executionId === "string" ? req.body.executionId : "";
+  if (!executionId) return res.status(400).json({ error: "executionId_required" });
+  const state = cancelControlExecution(executionId);
+  res.json({ ok: true, state, executions: state.executions, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/execution/retry", (req: Request, res: Response) => {
+  const executionId = typeof req.body?.executionId === "string" ? req.body.executionId : "";
+  if (!executionId) return res.status(400).json({ error: "executionId_required" });
+  const state = retryControlExecution(executionId);
+  res.json({ ok: true, state, execution: state.executions[0] ?? null, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.get("/arc/control/positions", (_req: Request, res: Response) => {
+  const state = getArcControlState();
+  res.json({ ok: true, positions: state.positions, ts: new Date().toISOString() });
+});
+
+apiRouter.post("/arc/control/positions/reduce", (req: Request, res: Response) => {
+  const positionId = typeof req.body?.positionId === "string" ? req.body.positionId : undefined;
+  const action = req.body?.pct === 50 ? "reduce50" : "reduce25";
+  const state = mutateControlPosition(action, positionId, liveTxContext(req));
+  const status = writeStatus(state);
+  res.json({ ok: status === "live", status, reason: status === "blocked" ? "live_tx_required" : undefined, state, positions: state.positions, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/positions/close", (req: Request, res: Response) => {
+  const state = mutateControlPosition("close", typeof req.body?.positionId === "string" ? req.body.positionId : undefined, liveTxContext(req));
+  const status = writeStatus(state);
+  res.json({ ok: status === "live", status, reason: status === "blocked" ? "live_tx_required" : undefined, state, positions: state.positions, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/positions/settle", (req: Request, res: Response) => {
+  const state = mutateControlPosition("settle", typeof req.body?.positionId === "string" ? req.body.positionId : undefined, liveTxContext(req));
+  const status = writeStatus(state);
+  res.json({ ok: status === "live", status, reason: status === "blocked" ? "live_tx_required" : undefined, state, positions: state.positions, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/positions/withdraw", (req: Request, res: Response) => {
+  const state = mutateControlPosition("withdraw", typeof req.body?.positionId === "string" ? req.body.positionId : undefined, liveTxContext(req));
+  const status = writeStatus(state);
+  res.json({ ok: status === "live", status, reason: status === "blocked" ? "live_tx_required" : undefined, state, positions: state.positions, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/positions/open", (req: Request, res: Response) => {
+  const state = mutateControlPosition("open", undefined, liveTxContext(req));
+  const status = writeStatus(state);
+  res.json({ ok: status === "live", status, reason: status === "blocked" ? "live_tx_required" : undefined, state, positions: state.positions, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/risk/exit", (req: Request, res: Response) => {
+  const reason = typeof req.body?.reason === "string" ? req.body.reason : undefined;
+  const state = triggerRiskEmergencyExit(reason, liveTxContext(req));
+  recordActivity("arc.control.risk.exit", "agora");
+  const status = writeStatus(state);
+  res.json({ ok: status === "live", status, reason: status === "blocked" ? "live_tx_required" : undefined, state, budget: state.budget, positions: state.positions, execution: state.executions[0] ?? null, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/risk/arm", (req: Request, res: Response) => {
+  const state = setRiskGuardMode("arm", liveTxContext(req));
+  recordActivity("arc.control.risk.arm", "agora");
+  const status = writeStatus(state);
+  res.json({ ok: status === "live", status, reason: status === "blocked" ? "live_tx_required" : undefined, state, budget: state.budget, positions: state.positions, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/risk/disarm", (req: Request, res: Response) => {
+  const state = setRiskGuardMode("disarm", liveTxContext(req));
+  recordActivity("arc.control.risk.disarm", "agora");
+  const status = writeStatus(state);
+  res.json({ ok: status === "live", status, reason: status === "blocked" ? "live_tx_required" : undefined, state, budget: state.budget, positions: state.positions, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.post("/arc/control/risk/reset", (req: Request, res: Response) => {
+  const state = setRiskGuardMode("reset", liveTxContext(req));
+  recordActivity("arc.control.risk.reset", "agora");
+  const status = writeStatus(state);
+  res.json({ ok: status === "live", status, reason: status === "blocked" ? "live_tx_required" : undefined, state, budget: state.budget, positions: state.positions, receipt: state.receipts[0] ?? null });
+});
+
+apiRouter.get("/arc/control/receipts", (_req: Request, res: Response) => {
+  const state = getArcControlState();
+  res.json({ ok: true, receipts: state.receipts, count: state.receipts.length, ts: new Date().toISOString() });
+});
+
+apiRouter.get("/arc/control/developer/status", (_req: Request, res: Response) => {
+  const deployment = readArcDeployment();
+  res.json({
+    ok: true,
+    developer: {
+      ...developerControlStatus(),
+      deployment,
+    },
     ts: new Date().toISOString(),
   });
 });

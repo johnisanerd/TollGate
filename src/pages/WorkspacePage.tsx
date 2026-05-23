@@ -20,6 +20,11 @@ import { ArcMindCopyTradingWidget } from "../components/widgets/agora/ArcMindWid
 import { ArcDiscoverWidget } from "../components/widgets/agora/ArcDiscoverWidget";
 import { ArcAgentDetailWidget } from "../components/widgets/agora/ArcAgentDetailWidget";
 import { CrossChainMirrorModal } from "../components/widgets/agora/CrossChainMirrorModal";
+import { ArbScannerWidget } from "../components/widgets/agora/ArbScannerWidget";
+import { ArcPerpTradingWidget } from "../components/widgets/agora/ArcPerpTradingWidget";
+import { ArcPredictionsWidget } from "../components/widgets/agora/ArcPredictionsWidget";
+import { ArcTractionWidget } from "../components/widgets/agora/ArcTractionWidget";
+import { AgoraPortfolioWidget } from "../components/widgets/agora/AgoraExtraWidgets";
 import type { VaultSummary } from "../lib/hyperliquid";
 import { slugifyTab } from "../components/ui/AppSidebar";
 import { DocsPage, IntegrationsPage } from "../components/docs";
@@ -69,6 +74,15 @@ function AgoraControlTab({
     );
   }
   if (tab === "copy & position") return <ArcMindCopyTradingWidget workspace={workspace} />;
+  if (tab === "arb scanner") return <ArbScannerWidget workspace={workspace} />;
+  if (tab === "perp trading") return <ArcPerpTradingWidget workspace={workspace} />;
+  if (tab === "predictions") return <ArcPredictionsWidget workspace={workspace} />;
+  if (tab === "portfolio") return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <ArcTractionWidget />
+      <AgoraPortfolioWidget workspace={workspace} />
+    </div>
+  );
   if (tab === "receipts") return <ArcControlReceiptsWidget workspace={workspace} />;
   if (tab === "developer console") return <ArcDeveloperConsoleWidget workspace={workspace} />;
   return (
