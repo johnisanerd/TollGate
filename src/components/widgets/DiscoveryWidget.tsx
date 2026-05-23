@@ -6,6 +6,7 @@ import { EmptyState } from "../ui/EmptyState";
 import { Skeleton } from "../ui/Motion";
 import { toast } from "../ui/Toast";
 import { registerOnChainService } from "../../lib/og";
+import type { WorkspaceId } from "../../types";
 
 const CONTRACTS = [
   { label: "Arbitrum Sepolia", addr: "0xA8FdDb9F6f54Fbf127cb8c71049cB1e19f5836F9", url: "https://sepolia.arbiscan.io/address/0xA8FdDb9F6f54Fbf127cb8c71049cB1e19f5836F9" },
@@ -44,7 +45,7 @@ function netColor(network: string) {
   return NETWORK_COLORS[network] ?? "var(--muted)";
 }
 
-export function DiscoveryWidget() {
+export function DiscoveryWidget({ workspaceId: _workspaceId }: { workspaceId?: WorkspaceId } = {}) {
   const [services, setServices] = useLocalStore<RegistryService[]>("registry.services", SEED_SERVICES);
   const [query, setQuery] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
