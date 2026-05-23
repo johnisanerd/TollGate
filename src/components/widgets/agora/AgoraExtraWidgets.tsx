@@ -8,6 +8,13 @@ import {
 import type { Workspace } from "../../../types";
 import { useLocalStore } from "../../../lib/storage";
 import { Skeleton } from "../../ui/Motion";
+import {
+  checkFunding,
+  recordFundingSpend,
+  requestWalletPerCallSignature,
+  ARC_AGENT_FUNDING_SCOPE,
+  ARC_USER_FUNDING_SCOPE,
+} from "../../../workspaces/agora/funding";
 
 const SERVER_URL = (import.meta.env as Record<string, string | undefined>)["VITE_SERVER_URL"] ?? "";
 
@@ -75,6 +82,12 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
   async function rebalance() {
     setRunning(true);
     setActionMessage(null);
+    const funding = checkFunding(ARC_AGENT_FUNDING_SCOPE, 0.01, { mode: "treasury", serviceId: "svc_arc_portfolio" });
+    if (!funding.ok) {
+      setPhase(`Blocked before paid rebalance: ${funding.reason}. Fund Arc Agent Treasury in Agent Engine first.`);
+      setRunning(false);
+      return;
+    }
     setPhase("Fetching live prices via CoinGecko…");
 
     let liveEth = ASSETS[1].price;
@@ -101,6 +114,11 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
       rebalanceReceiptId = localReceiptId("portfolio_local");
       fallbackNote = fallbackNote ?? "Portfolio API unavailable. Local rebalance receipt created; no live settlement claim was made.";
     }
+    recordFundingSpend(ARC_AGENT_FUNDING_SCOPE, 0.01, {
+      mode: "treasury",
+      serviceId: "svc_arc_portfolio",
+      settlement: fallbackNote ? "fallback" : "live",
+    });
 
     const currentEth = holdings.find((h) => h.symbol === "ETH")?.price || liveEth;
     const ethDir = liveEth >= currentEth ? 1 : -1;
@@ -201,7 +219,7 @@ export function AgoraPortfolioWidget({ workspace }: { workspace: Workspace }) {
         items={[
           { label: "User goal", value: "Keep copy capital in a transparent USDC/ETH allocation instead of blindly following every signal." },
           { label: "Source", value: "Uses /api/signals ETH price when available; local price snapshots are marked as fallback." },
-          { label: "Funds", value: "Rebalance updates the allocation plan; live movement needs configured x402/CCTP routes.", tone: "warn" },
+          { label: "Funds", value: "Autonomous rebalance requires Arc Agent Treasury preflight. Manual Risk-off/Restore only changes user-visible allocation state.", tone: "warn" },
           { label: "Exit", value: "Risk-off moves the full model position back to USDC; Restore target reopens the model allocation." },
         ]}
       />
@@ -322,9 +340,18 @@ export function AgoraCircleToolsWidget({ workspace: _ }: { workspace: Workspace 
       "Gas Abstraction": "svc_arc_copytrade",
     };
     const svc = svcMap[tool];
+    let userSignature: string;
+    try {
+      userSignature = await requestWalletPerCallSignature(ARC_USER_FUNDING_SCOPE, 0.01, svc);
+    } catch {
+      setResults(prev => ({ ...prev, [tool]: "Wallet signature required before this manual Circle tool call. Agent Treasury is not used here." }));
+      setStates(prev => ({ ...prev, [tool]: "stopped" }));
+      setLoading(null);
+      return;
+    }
     try {
       const res = await fetch(`${SERVER_URL}/api/gateway/${svc}`, {
-        headers: paidGatewayHeaders("circle-tools"),
+        headers: paidGatewayHeaders("circle-tools", { "X-User-Signature": userSignature }),
         signal: AbortSignal.timeout(10_000),
       });
       const data = res.ok ? await res.json() as { receiptId?: string; data?: Record<string, string> } : {};
@@ -449,9 +476,17 @@ export function AgoraX402Widget({ workspace }: { workspace: Workspace }) {
 
   async function callService(svc: typeof X402_SERVICES[0]) {
     setCalling(svc.id);
+    let userSignature: string;
+    try {
+      userSignature = await requestWalletPerCallSignature(ARC_USER_FUNDING_SCOPE, svc.price, svc.id);
+    } catch {
+      setCalls(prev => [{ svc: `${svc.name} blocked - wallet signature required`, amount: 0, hash: "no-signature", ts: new Date().toLocaleTimeString() }, ...prev].slice(0, 30));
+      setCalling(null);
+      return;
+    }
     try {
       const res = await fetch(`${SERVER_URL}/api/gateway/${svc.id}`, {
-        headers: paidGatewayHeaders("arcmind-user"),
+        headers: paidGatewayHeaders("arcmind-user", { "X-User-Signature": userSignature }),
         signal: AbortSignal.timeout(12_000),
       });
       const data = res.ok ? await res.json() as { receiptId?: string } : {};
@@ -798,9 +833,17 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
     setBridging(true);
     setBridgeResult(null);
     setAppKitError(null);
+    let userSignature: string;
+    try {
+      userSignature = await requestWalletPerCallSignature(ARC_USER_FUNDING_SCOPE, 0.05, "svc_arc_arb");
+    } catch {
+      setAppKitError("Wallet signature is required before a manual bridge. Agent Treasury is not used for App Kit user actions.");
+      setBridging(false);
+      return;
+    }
     try {
       const res = await fetch(`${SERVER_URL}/api/gateway/svc_arc_arb`, {
-        headers: paidGatewayHeaders("appkit-bridge"),
+        headers: paidGatewayHeaders("appkit-bridge", { "X-User-Signature": userSignature }),
         signal: AbortSignal.timeout(12_000),
       });
       const data = res.ok ? await res.json() as { receiptId?: string } : {};
@@ -843,9 +886,17 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
     setSwapping(true);
     setSwapDone(null);
     setAppKitError(null);
+    let userSignature: string;
+    try {
+      userSignature = await requestWalletPerCallSignature(ARC_USER_FUNDING_SCOPE, 0.02, "svc_arc_swap");
+    } catch {
+      setAppKitError("Wallet signature is required before a manual swap. Agent Treasury is not used for App Kit user actions.");
+      setSwapping(false);
+      return;
+    }
     try {
       const res = await fetch(`${SERVER_URL}/api/gateway/svc_arc_swap`, {
-        headers: paidGatewayHeaders("appkit-swap"),
+        headers: paidGatewayHeaders("appkit-swap", { "X-User-Signature": userSignature }),
         signal: AbortSignal.timeout(12_000),
       });
       const data = res.ok ? await res.json() as { receiptId?: string } : {};
@@ -864,9 +915,17 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
     setSending(true);
     setSendDone(null);
     setAppKitError(null);
+    let userSignature: string;
+    try {
+      userSignature = await requestWalletPerCallSignature(ARC_USER_FUNDING_SCOPE, 0.01, "svc_arc_oracle");
+    } catch {
+      setAppKitError("Wallet signature is required before a manual send. Agent Treasury is not used for App Kit user actions.");
+      setSending(false);
+      return;
+    }
     try {
       const res = await fetch(`${SERVER_URL}/api/gateway/svc_arc_oracle`, {
-        headers: paidGatewayHeaders("appkit-send"),
+        headers: paidGatewayHeaders("appkit-send", { "X-User-Signature": userSignature }),
         signal: AbortSignal.timeout(8_000),
       });
       const data = res.ok ? await res.json() as { receiptId?: string } : {};
@@ -912,7 +971,7 @@ export function ArcAppKitWidget({ workspace }: { workspace: Workspace }) {
         items={[
           { label: "Purpose", value: "A single wallet console for the flows this product actually needs: balance, bridge, swap and send." },
           { label: "Source", value: "Balance reads Arc JSON-RPC; bridge/swap/send call configured backend gateways when available." },
-          { label: "Funds", value: "Bridge and send are irreversible once live settlement is configured; fallback receipts are marked local.", tone: "warn" },
+          { label: "Funds", value: "Bridge, swap and send are manual user-wallet actions. Each live call requires a wallet signature; Agent Treasury is not used here.", tone: "warn" },
           { label: "Undo path", value: "Bridge back and reverse swap prepare the opposite route, but require a fresh quote before execution." },
         ]}
       />
@@ -1132,9 +1191,17 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
     }
     setExecuting(true);
     setSwapError(null);
+    let userSignature: string;
+    try {
+      userSignature = await requestWalletPerCallSignature(ARC_USER_FUNDING_SCOPE, 0.02, "svc_arc_swap");
+    } catch {
+      setSwapError("Wallet signature is required before manual DEX execution. Agent Treasury is not used for user swaps.");
+      setExecuting(false);
+      return;
+    }
     try {
       const res = await fetch(`${SERVER_URL}/api/gateway/svc_arc_swap`, {
-        headers: paidGatewayHeaders("arcmind-swap", { "X-Swap-Side": side, "X-Swap-Amount": amountIn }),
+        headers: paidGatewayHeaders("arcmind-swap", { "X-Swap-Side": side, "X-Swap-Amount": amountIn, "X-User-Signature": userSignature }),
         signal: AbortSignal.timeout(12_000),
       });
       const data = res.ok ? await res.json() as { receiptId?: string } : {};
@@ -1188,7 +1255,7 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
         </span>
         <div>
           <h3>Arc DEX Swap Execution</h3>
-          <div className="sub">ArcMind executes BUY/SELL at real ETH market price — paid via x402 per trade</div>
+          <div className="sub">Manual BUY/SELL execution at live ETH price — user signs each paid x402 trade</div>
         </div>
         {swaps.length > 0 && (
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -1209,7 +1276,7 @@ export function ArcMindSwapWidget({ workspace }: { workspace: Workspace }) {
         items={[
           { label: "Use case", value: "Convert copy-strategy exposure between USDC and ETH after Decision Guard produces an action." },
           { label: "Price source", value: "Live quote comes from /api/eth-quote; unavailable quotes are explicitly marked as fallback." },
-          { label: "Execution", value: "Live swap needs the configured gateway; local receipts do not claim a real DEX fill.", tone: "warn" },
+          { label: "Execution", value: "Live swap needs wallet signature + configured gateway; local receipts do not claim a real DEX fill.", tone: "warn" },
           { label: "Recovery", value: "Reverse latest creates an opposite local route and closes the previous open swap in history." },
         ]}
       />
@@ -1336,9 +1403,17 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
     const currentApy = apy ?? 4.8;
     setDepositing(true);
     setYieldError(null);
+    let userSignature: string;
+    try {
+      userSignature = await requestWalletPerCallSignature(ARC_USER_FUNDING_SCOPE, amt, "svc_arc_usyc");
+    } catch {
+      setYieldError("Wallet signature is required before a manual USYC deposit. Agent Treasury is not used for user deposits.");
+      setDepositing(false);
+      return;
+    }
     try {
       const res = await fetch(`${SERVER_URL}/api/gateway/svc_arc_usyc`, {
-        headers: paidGatewayHeaders("arcmind-yield", { "X-USYC-Amount": String(amt) }),
+        headers: paidGatewayHeaders("arcmind-yield", { "X-USYC-Amount": String(amt), "X-User-Signature": userSignature }),
         signal: AbortSignal.timeout(12_000),
       });
       const data = res.ok ? await res.json() as { receiptId?: string } : {};
@@ -1388,7 +1463,7 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
         <span className="sq soft" style={{ color: "#10B981" }}><Percent size={15} /></span>
         <div>
           <h3>USYC — Circle Yield Token</h3>
-          <div className="sub">Park idle USDC into Circle USYC on Arc L1 — earn real yield, settled via x402 Nanopayment</div>
+          <div className="sub">Park idle USDC into Circle USYC on Arc L1 — manual wallet-signed deposit, not Agent Treasury</div>
         </div>
         {apy !== null && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -1407,7 +1482,7 @@ export function ArcMindYieldWidget({ workspace }: { workspace: Workspace }) {
       <FlowExplainer
         items={[
           { label: "Why", value: "Risk-off parking for idle USDC when Decision Guard says market exposure is unsafe." },
-          { label: "Destination", value: "USDC mints USYC when the gateway is live; local fallback deposits are marked and do not claim live mint." },
+          { label: "Destination", value: "User wallet signs the deposit; USDC mints USYC only when the gateway is live. Local fallback deposits do not claim live mint." },
           { label: "Exit", value: "Redeem one deposit or redeem all to move the position back toward USDC state." },
           { label: "Safety", value: "Amount, APY source, mint fee, receipt and redemption status stay visible per deposit." },
         ]}

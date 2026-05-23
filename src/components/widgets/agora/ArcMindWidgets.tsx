@@ -4,8 +4,9 @@ import { Skeleton } from "../../ui/Motion";
 import {
   Copy, Eye, Lock, Play, Pause, Shield, Zap, Brain,
   ArrowUpRight, ArrowDownRight, AlertTriangle, CheckCheck, ExternalLink,
-  Activity, Download,
+  Activity, Download, ChevronDown, Settings,
 } from "lucide-react";
+import { ArcMindAlgorithmProfile } from "./ArcMindAlgorithmProfile";
 import type { Workspace } from "../../../types";
 import { useLocalStore } from "../../../lib/storage";
 import { useAppState } from "../../../app-state";
@@ -15,6 +16,26 @@ import {
   stakeToEscrow, registerArcAgent, recordArcDecision, resolveArcDecision,
   arcExplorerTxUrl, ARC_CHAIN_HEX, switchToArc,
 } from "../../../lib/agora";
+import {
+  checkFunding,
+  fundingReceiptPayload,
+  recordFundingSpend,
+  requestWalletPerCallSignature,
+  ARC_USER_FUNDING_SCOPE,
+  ARC_AGENT_FUNDING_SCOPE,
+} from "../../../workspaces/agora/funding";
+import {
+  copySessionKey,
+  createCopySession,
+  pauseCopySession,
+  reduceCopyAllocation,
+  resumeCopySession,
+  settleCopySession,
+  triggerRiskExit,
+  withdrawCopySession,
+  type CopyRiskProfile,
+  type CopySession,
+} from "../../../workspaces/agora/copySession";
 
 function paidGatewayHeaders(agentId: string, extra: Record<string, string> = {}): Record<string, string> {
   return { "X-Agent-Id": agentId, ...extra };
@@ -182,11 +203,14 @@ function useArcDecisionStats(workspaceId: string) {
 
 export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }) {
   const { emitReceipt } = useAppState();
+  const [session, setSession] = useLocalStore<CopySession | null>(copySessionKey(workspace.id), null);
   const [positions, setPositions] = useLocalStore<CopyPosition[]>(
     `arcmind-copy-${workspace.id}`,
     []
   );
   const [stake, setStake] = useState("10");
+  const [riskProfile, setRiskProfile] = useLocalStore<CopyRiskProfile>(`arcmind-risk-profile-${workspace.id}`, "balanced");
+  const [maxDrawdown, setMaxDrawdown] = useLocalStore<number>(`arcmind-user-max-dd-${workspace.id}`, 15);
   const [following, setFollowing] = useState(false);
   const [paused, setPaused] = useState(false);
   const [totalPnl, setTotalPnl] = useState(0);
@@ -195,11 +219,20 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
   const [stakeTxHash, setStakeTxHash] = useLocalStore<string | null>(`arcmind-stake-tx-${workspace.id}`, null);
   const [stakeGasless, setStakeGasless] = useLocalStore<boolean>(`arcmind-stake-gasless-${workspace.id}`, false);
   const [autoFollow, setAutoFollow] = useLocalStore<boolean>(`arcmind-auto-follow-${workspace.id}`, false);
+  const [copyMode, setCopyMode] = useLocalStore<"smart" | "advanced">(`arcmind-copy-mode-${workspace.id}`, "smart");
+  const [takeProfitPct, setTakeProfitPct] = useLocalStore<number>(`arcmind-tp-${workspace.id}`, 5);
+  const [stopLossPct, setStopLossPct] = useLocalStore<number>(`arcmind-sl-${workspace.id}`, 3);
+  const [maxPositionUsd, setMaxPositionUsd] = useLocalStore<number>(`arcmind-maxpos-${workspace.id}`, 2);
+  const [slippagePct, setSlippagePct] = useLocalStore<number>(`arcmind-slippage-${workspace.id}`, 1);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { stats } = useArcDecisionStats(workspace.id);
   const liveEthPrice = useEthPrice();
   const liveEthRef = useRef(liveEthPrice);
   liveEthRef.current = liveEthPrice;
+  const sessionStatus = session?.status ?? (following ? paused ? "paused" : "active" : "idle");
+  const activeStake = session?.activeStakeUsd ?? (following ? (safeAmt(stake, 10_000) ?? 10) : 0);
+  const withdrawableUsd = session?.withdrawableUsd ?? (following ? Math.max(0, (safeAmt(stake, 10_000) ?? 10) + totalPnl) : 0);
 
   // Real PnL: (livePrice - entry) * size for ETH positions; stop ticking after
   useEffect(() => {
@@ -224,6 +257,10 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
 
   async function startCopying() {
     const amt = safeAmt(stake, 10_000) ?? 10;
+    if (amt < 1) {
+      setStakeErr("Minimum stake is $1 USDC.");
+      return;
+    }
     const now = Date.now();
     setStakeErr(null);
 
@@ -243,7 +280,11 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
         currency: "USDC",
         network: "arc-testnet",
         kind: "arcmind.copy.stake",
-        payload: { txHash },
+        payload: fundingReceiptPayload(ARC_USER_FUNDING_SCOPE, amt, {
+          mode: "wallet_per_call",
+          serviceId: "copytrade-escrow-stake",
+          settlement: "live",
+        }, { txHash, userCapital: true }),
       });
     } catch (e: unknown) {
       fallbackNote = shortFlowError(e);
@@ -252,11 +293,15 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
       emitReceipt({
         workspaceId: workspace.id,
         serviceName: `Local fallback stake record - $${amt} USDC`,
-        amount: amt,
+        amount: 0,
         currency: "USDC",
         network: "arc-testnet",
         kind: "arcmind.copy.stake.local_fallback",
-        payload: { receiptId: stakeTx, fallback: true, reason: fallbackNote },
+        payload: fundingReceiptPayload(ARC_USER_FUNDING_SCOPE, amt, {
+          mode: "wallet_per_call",
+          serviceId: "copytrade-escrow-stake",
+          settlement: "fallback",
+        }, { receiptId: stakeTx, displayAmount: amt, reason: fallbackNote, userCapital: true }),
       });
     }
 
@@ -288,17 +333,41 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
     }
 
     setPositions(pos);
+    setSession(createCopySession({
+      stakeUsd: amt,
+      riskProfile,
+      maxDrawdownPct: maxDrawdown,
+      autoExit: true,
+      settlement: fallbackNote ? "fallback" : "live",
+      source: fallbackNote ? "local" : "live",
+      now: new Date(now),
+    }));
     setFollowing(true);
     setPaused(false);
     setStakeErr(fallbackNote);
     emitReceipt({
       workspaceId: workspace.id,
       serviceName: `Copy ArcMind — $${amt} USDC`,
-      amount: amt,
+      amount: fallbackNote ? 0 : amt,
       currency: "USDC",
       network: "arc-testnet",
       kind: "arcmind.copy.start",
-      payload: { txHash: stakeTx, fallback: Boolean(fallbackNote) },
+      payload: fundingReceiptPayload(ARC_USER_FUNDING_SCOPE, amt, {
+        mode: "wallet_per_call",
+        serviceId: "copytrade-start",
+        settlement: fallbackNote ? "fallback" : "live",
+      }, {
+        txHash: stakeTx,
+        userCapital: true,
+        advancedSettings: {
+          copyMode,
+          takeProfitPct,
+          stopLossPct,
+          maxPositionUsd,
+          slippagePct,
+          maxDrawdownPct: maxDrawdown,
+        },
+      }),
     });
     setStaking(false);
   }
@@ -306,6 +375,7 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
   function stopCopying() {
     const stakeAmount = safeAmt(stake, 10_000) ?? 10;
     const settlementAmount = Math.max(0, stakeAmount + totalPnl);
+    if (session) setSession(settleCopySession(session, totalPnl));
     setFollowing(false);
     setPaused(false);
     if (tickRef.current) clearInterval(tickRef.current);
@@ -313,36 +383,97 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
     emitReceipt({
       workspaceId: workspace.id,
       serviceName: `Copy ArcMind settlement - $${settlementAmount.toFixed(2)} USDC`,
-      amount: settlementAmount,
+      amount: 0,
       currency: "USDC",
       network: "arc-testnet",
       kind: "arcmind.copy.settle",
-      payload: {
+      payload: fundingReceiptPayload(ARC_USER_FUNDING_SCOPE, settlementAmount, {
+        mode: "wallet_per_call",
+        serviceId: "copytrade-settle",
+        settlement: "fallback",
+      }, {
         returnedStake: stakeAmount,
         pnl: Number(totalPnl.toFixed(6)),
         receiptId: localReceiptId("copy_settle"),
-      },
+      }),
     });
     setStakeErr(`Position settled. $${settlementAmount.toFixed(2)} USDC is marked as returned in this session; live escrow settlement requires the Arc contract path.`);
+  }
+
+  function togglePause() {
+    if (paused) {
+      if (session) setSession(resumeCopySession(session));
+      setPaused(false);
+      setStakeErr("Copy strategy resumed. Risk guard remains armed.");
+    } else {
+      if (session) setSession(pauseCopySession(session));
+      setPaused(true);
+      setStakeErr("Copy strategy paused. New exposure is blocked; current session remains withdrawable.");
+    }
+  }
+
+  function reduceAllocation() {
+    if (!session) return;
+    const reduced = reduceCopyAllocation(session, 50);
+    setSession(reduced);
+    setPositions((prev: CopyPosition[]) => prev.map((p) => ({ ...p, size: p.size * 0.5 })));
+    setStakeErr("Allocation reduced by 50%. Reduced capital is marked as withdrawable USDC.");
+    emitReceipt({
+      workspaceId: workspace.id,
+      serviceName: "CopyGuard allocation reduced - 50%",
+      amount: 0,
+      currency: "USDC",
+      network: "arc-testnet",
+      kind: "arcmind.copy.reduce",
+      payload: fundingReceiptPayload(ARC_USER_FUNDING_SCOPE, reduced.withdrawableUsd, {
+        mode: "wallet_per_call",
+        serviceId: "copytrade-reduce",
+        settlement: "fallback",
+      }, { sessionId: reduced.id, userCapital: true, fallback: true }),
+    });
+  }
+
+  function requestWithdraw() {
+    if (!session) return stopCopying();
+    const settled = session.status === "settled" || session.status === "risk_exit_pending"
+      ? session
+      : settleCopySession(session, totalPnl);
+    const withdrawn = withdrawCopySession(settled);
+    setSession(withdrawn);
+    setFollowing(false);
+    setPaused(false);
+    setPositions([]);
+    setStakeErr("Withdraw request completed for the local session. Live escrow withdrawal requires the Arc CopyTradeVault contract path.");
+  }
+
+  function simulateRiskExit() {
+    if (!session) return;
+    const exited = triggerRiskExit(session, `drawdown threshold ${maxDrawdown}% reached in user simulation`);
+    setSession(exited);
+    setFollowing(false);
+    setPaused(true);
+    setStakeErr(exited.lastAction);
   }
 
   return (
     <div className="rounded-xl border border-purple-500/20 bg-purple-950/20 p-5 space-y-4">
       <WrongNetworkBanner />
+
+      {/* Who am I copying? — explicit algorithm profile */}
+      <ArcMindAlgorithmProfile compact />
+
       <div className="flex items-center gap-2">
         <Copy className="w-5 h-5 text-purple-400" />
-        <h3 className="font-semibold text-white">Copy ArcMind Strategy</h3>
-        {following && (
-          <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${paused ? "bg-yellow-500/20 text-yellow-300" : "bg-green-500/20 text-green-400 animate-pulse"}`}>
-            {paused ? "PAUSED" : "LIVE"}
-          </span>
-        )}
+        <h3 className="font-semibold text-white">CopyGuard Strategy</h3>
+        <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${sessionStatus === "active" ? "bg-green-500/20 text-green-400 animate-pulse" : sessionStatus === "paused" ? "bg-yellow-500/20 text-yellow-300" : sessionStatus === "risk_exit_pending" ? "bg-red-500/20 text-red-300" : "bg-white/10 text-gray-300"}`}>
+          {sessionStatus.replace(/_/g, " ").toUpperCase()}
+        </span>
       </div>
       <FlowExplainer items={[
+        { label: "What you control", value: "Stake, risk profile, max drawdown, pause, reduce, settle and withdraw." },
         { label: "What is copied", value: "ArcMind's ETH/USDC BUY/SELL/HOLD strategy, not a hidden human trader." },
-        { label: "Source", value: "Latest ArcMind decision log plus ETH price; fallback is explicitly marked if live decisions are missing." },
-        { label: "Funds", value: "USDC stays in CopyTradeEscrow when configured; otherwise this is local-only and no wallet funds move.", tone: isAgoraEscrowConfigured() ? "safe" : "warn" },
-        { label: "Safety", value: "Pause blocks new exposure; withdraw settles PnL and closes the copy session." },
+        { label: "Funds", value: "Your stake is user capital. Agent Treasury pays data/action costs only and never funds your copy stake.", tone: isAgoraEscrowConfigured() ? "safe" : "warn" },
+        { label: "Exit path", value: "Pause blocks new exposure; reduce moves capital toward USDC; withdraw settles and closes the session." },
       ]} />
 
       <div className="grid grid-cols-3 gap-3">
@@ -379,10 +510,119 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
               className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500/60 focus:ring-1 focus:ring-purple-500/40"
             />
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-400">Risk profile</label>
+              <select
+                value={riskProfile}
+                onChange={(e) => setRiskProfile(e.currentTarget.value as CopyRiskProfile)}
+                className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500/60"
+              >
+                <option value="safe">Safe</option>
+                <option value="balanced">Balanced</option>
+                <option value="aggressive">Aggressive</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400">Max drawdown</label>
+              <input
+                type="number"
+                min="5"
+                max="30"
+                value={maxDrawdown}
+                onChange={(e) => setMaxDrawdown(Math.max(5, Math.min(30, Number(e.currentTarget.value) || 15)))}
+                className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500/60"
+              />
+            </div>
+          </div>
+          {/* Advanced per-trade settings — Binance/Bybit-style */}
+          <div className="rounded-lg border border-white/10 bg-white/5">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-300 hover:bg-white/5"
+            >
+              <Settings className="w-3.5 h-3.5 text-purple-400" />
+              <span className="font-semibold">Advanced settings</span>
+              <span className="text-gray-500 text-[10px] ml-1">(per-trade TP/SL, copy mode, slippage)</span>
+              <ChevronDown className={`w-3.5 h-3.5 ml-auto transition-transform ${showAdvanced ? "rotate-0" : "-rotate-90"}`} />
+            </button>
+            {showAdvanced && (
+              <div className="px-3 pb-3 space-y-3 border-t border-white/10 pt-3">
+                <div>
+                  <label className="text-xs text-gray-400">Copy mode</label>
+                  <div className="mt-1 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCopyMode("smart")}
+                      className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${copyMode === "smart" ? "border-purple-500/60 bg-purple-500/20 text-purple-200" : "border-white/10 bg-white/5 text-gray-400"}`}
+                    >
+                      Smart (proportional)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCopyMode("advanced")}
+                      className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${copyMode === "advanced" ? "border-purple-500/60 bg-purple-500/20 text-purple-200" : "border-white/10 bg-white/5 text-gray-400"}`}
+                    >
+                      Advanced (fixed $)
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    {copyMode === "smart"
+                      ? "Each ArcMind trade is sized as a % of your stake."
+                      : "Each ArcMind trade uses the fixed Max position $ below, regardless of stake."}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-400">Take-profit %</label>
+                    <input
+                      type="number" min="1" max="50" step="0.5" value={takeProfitPct}
+                      onChange={(e) => setTakeProfitPct(Math.max(1, Math.min(50, Number(e.currentTarget.value) || 5)))}
+                      className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500/60"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400">Stop-loss %</label>
+                    <input
+                      type="number" min="0.5" max="20" step="0.5" value={stopLossPct}
+                      onChange={(e) => setStopLossPct(Math.max(0.5, Math.min(20, Number(e.currentTarget.value) || 3)))}
+                      className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500/60"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-400">Max position per trade ($)</label>
+                    <input
+                      type="number" min="0.1" step="0.1" value={maxPositionUsd}
+                      onChange={(e) => setMaxPositionUsd(Math.max(0.1, Number(e.currentTarget.value) || 2))}
+                      className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500/60"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400">Slippage threshold %</label>
+                    <input
+                      type="number" min="0.1" max="5" step="0.1" value={slippagePct}
+                      onChange={(e) => setSlippagePct(Math.max(0.1, Math.min(5, Number(e.currentTarget.value) || 1)))}
+                      className="mt-1 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500/60"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-500">
+                  Per-trade TP/SL/slippage are recorded in the copy receipt and inform off-chain order routing. The on-chain CopyTradeEscrow uses the max drawdown above as the total stop-loss.
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="text-xs text-gray-500 space-y-1">
             <div className="flex justify-between"><span>Performance fee</span><span>5%</span></div>
-            <div className="flex justify-between"><span>Auto-exit on drawdown</span><span className="text-yellow-400">&gt;15%</span></div>
-            <div className="flex justify-between"><span>Settlement</span><span>USDC · Arc L1 (ERC-8183)</span></div>
+            <div className="flex justify-between"><span>Total stop-loss (max drawdown)</span><span className="text-yellow-400">&gt;{maxDrawdown}%</span></div>
+            <div className="flex justify-between"><span>Per-trade TP / SL</span><span>{takeProfitPct}% / {stopLossPct}%</span></div>
+            <div className="flex justify-between"><span>Copy mode</span><span className="capitalize">{copyMode}</span></div>
+            <div className="flex justify-between"><span>Payer</span><span>User wallet signature</span></div>
+            <div className="flex justify-between"><span>Settlement</span><span>{isAgoraEscrowConfigured() ? "CopyTradeEscrow on Arc" : "Local fallback until vault configured"}</span></div>
           </div>
           {stakeErr && <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">{stakeErr}</div>}
           {!isAgoraEscrowConfigured() && (
@@ -395,7 +635,7 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
             disabled={staking}
             className="w-full rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-sm font-semibold py-2.5 transition-colors"
           >
-            {staking ? "Approving USDC + staking…" : "Stake & Start Copy Strategy"}
+            {staking ? "Approving user wallet stake..." : "Start Copy Strategy"}
           </button>
           {isAgoraEscrowConfigured() && !staking && (
             <p className="text-[10.5px] text-gray-600 text-center">
@@ -406,10 +646,18 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
       ) : (
         <div className="space-y-3">
           <div className="rounded-lg bg-white/5 p-3 flex justify-between items-center">
-            <span className="text-sm text-gray-400">Unrealised PnL</span>
-            <span className={`text-lg font-bold ${totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-              {totalPnl >= 0 ? "+" : ""}{totalPnl.toFixed(4)} USDC
-            </span>
+            <span className="text-sm text-gray-400">Active stake</span>
+            <span className="text-lg font-bold text-blue-400">${activeStake.toFixed(2)} USDC</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg bg-white/5 p-3">
+              <div className="text-xs text-gray-400">Unrealised PnL</div>
+              <div className={`text-lg font-bold ${totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>{totalPnl >= 0 ? "+" : ""}{totalPnl.toFixed(4)} USDC</div>
+            </div>
+            <div className="rounded-lg bg-white/5 p-3">
+              <div className="text-xs text-gray-400">Withdrawable</div>
+              <div className="text-lg font-bold text-purple-300">${withdrawableUsd.toFixed(2)} USDC</div>
+            </div>
           </div>
           <div className="space-y-2">
             {positions.map((p: CopyPosition, i: number) => (
@@ -418,10 +666,20 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
                   ? <ArrowUpRight className="w-4 h-4 text-green-400 shrink-0" />
                   : <ArrowDownRight className="w-4 h-4 text-red-400 shrink-0" />
                 }
-                <span className="text-gray-300 flex-1">{p.asset}</span>
+                <span className="text-gray-300 flex-1">
+                  {p.asset}
+                  <span className="text-[10px] text-gray-500 ml-2">entry ${p.entry.toFixed(2)} · size {p.size.toFixed(4)}</span>
+                </span>
                 <span className={`font-mono text-xs ${p.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
                   {p.pnl >= 0 ? "+" : ""}{p.pnl.toFixed(4)}
                 </span>
+                {stakeTxHash && stakeTxHash.startsWith("0x") && (
+                  <a href={arcExplorerTxUrl(stakeTxHash)} target="_blank" rel="noreferrer"
+                    title="View entry tx on ArcScan"
+                    className="text-purple-400 hover:text-purple-300">
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
               </div>
             ))}
           </div>
@@ -454,22 +712,137 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
             </button>
           </div>
           <button
-            onClick={() => {
-              setPaused((p: boolean) => !p);
-              setStakeErr(paused ? "Copy trading resumed. Existing positions remain open." : "Copy trading paused. Existing positions are kept, no new PnL ticks are applied.");
-            }}
+            onClick={togglePause}
             className="w-full rounded-lg border border-white/20 text-gray-300 hover:bg-white/5 text-sm font-semibold py-2.5 transition-colors"
           >
             {paused ? "Resume Copy Strategy" : "Pause New Copies"}
           </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={reduceAllocation}
+              className="rounded-lg border border-yellow-500/40 text-yellow-300 hover:bg-yellow-500/10 text-sm font-semibold py-2.5 transition-colors"
+            >
+              Reduce 50%
+            </button>
+            <button
+              onClick={simulateRiskExit}
+              className="rounded-lg border border-red-500/40 text-red-300 hover:bg-red-500/10 text-sm font-semibold py-2.5 transition-colors"
+            >
+              Trigger Risk Exit
+            </button>
+          </div>
           <button
-            onClick={stopCopying}
+            onClick={requestWithdraw}
             className="w-full rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 text-sm font-semibold py-2.5 transition-colors"
           >
             Withdraw &amp; Settle
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+export function ArcMindStartWidget({ workspace, onGoTab }: { workspace: Workspace; onGoTab?: (tab: string) => boolean }) {
+  const [session] = useLocalStore<CopySession | null>(copySessionKey(workspace.id), null);
+  const onArc = useArcNetwork();
+  const steps = [
+    { label: "Connect wallet", value: onArc === null ? "wallet needed" : "wallet detected", tone: onArc === null ? "warn" : "safe" },
+    { label: "Use Arc Testnet", value: onArc === true ? "ready" : "switch required", tone: onArc === true ? "safe" : "warn" },
+    { label: "Copy status", value: session?.status?.replace(/_/g, " ") ?? "not started", tone: session?.status === "active" ? "safe" : "warn" },
+  ] as const;
+
+  return (
+    <div className="rounded-xl border border-blue-500/20 bg-blue-950/20 p-5 space-y-4">
+      <WrongNetworkBanner />
+      <div className="flex items-center gap-2">
+        <Shield className="w-5 h-5 text-blue-400" />
+        <div>
+          <h3 className="font-semibold text-white">Start CopyGuard</h3>
+          <p className="text-xs text-gray-400 mt-1">Copy ArcMind only with your own wallet approval. You can pause, reduce, settle or withdraw the visible session at any time.</p>
+        </div>
+      </div>
+      <FlowExplainer items={[
+        { label: "Your funds", value: "Copy stake is user capital. It is never paid from Agent Treasury." },
+        { label: "Agent costs", value: "ArcMind uses its own Agent Treasury only for market data and autonomous service calls." },
+        { label: "Safety", value: "Risk Guard watches drawdown, source divergence and failed payment states before new exposure." },
+        { label: "Exit", value: "Withdraw/settle closes the copy session. Local fallback sessions never claim live custody." },
+      ]} />
+      <div className="grid grid-cols-3 gap-3">
+        {steps.map((s) => (
+          <div key={s.label} className="rounded-lg bg-white/5 border border-white/10 p-3">
+            <div className="text-[10px] uppercase tracking-wide text-gray-500 font-bold">{s.label}</div>
+            <div className={s.tone === "safe" ? "text-green-400 font-bold mt-1 capitalize" : "text-yellow-300 font-bold mt-1 capitalize"}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          onClick={() => onGoTab?.("Copy Strategy")}
+          className="rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold py-2.5 transition-colors"
+        >
+          Start Copy Strategy
+        </button>
+        <button
+          onClick={() => onGoTab?.("Risk Guard")}
+          className="rounded-lg border border-white/20 text-gray-300 hover:bg-white/5 text-sm font-semibold py-2.5 transition-colors"
+        >
+          Review Risk Guard
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function ArcMindPositionsWidget({ workspace }: { workspace: Workspace }) {
+  const [session] = useLocalStore<CopySession | null>(copySessionKey(workspace.id), null);
+  const [positions] = useLocalStore<CopyPosition[]>(`arcmind-copy-${workspace.id}`, []);
+  const totalPnl = positions.reduce((sum, p) => sum + p.pnl, 0);
+  const status = session?.status ?? "idle";
+  const withdrawable = session ? session.withdrawableUsd : 0;
+
+  return (
+    <div className="rounded-xl border border-cyan-500/20 bg-cyan-950/20 p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <Activity className="w-5 h-5 text-cyan-400" />
+        <h3 className="font-semibold text-white">Positions & Withdrawals</h3>
+        <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-white/10 text-gray-300">{status.replace(/_/g, " ").toUpperCase()}</span>
+      </div>
+      <div className="grid grid-cols-4 gap-3">
+        <div className="rounded-lg bg-white/5 p-3">
+          <div className="text-xs text-gray-400">Stake</div>
+          <div className="text-lg font-bold text-white">${(session?.stakeUsd ?? 0).toFixed(2)}</div>
+        </div>
+        <div className="rounded-lg bg-white/5 p-3">
+          <div className="text-xs text-gray-400">Active</div>
+          <div className="text-lg font-bold text-blue-400">${(session?.activeStakeUsd ?? 0).toFixed(2)}</div>
+        </div>
+        <div className="rounded-lg bg-white/5 p-3">
+          <div className="text-xs text-gray-400">PnL</div>
+          <div className={`text-lg font-bold ${totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>{totalPnl >= 0 ? "+" : ""}{totalPnl.toFixed(4)}</div>
+        </div>
+        <div className="rounded-lg bg-white/5 p-3">
+          <div className="text-xs text-gray-400">Withdrawable</div>
+          <div className="text-lg font-bold text-purple-300">${withdrawable.toFixed(2)}</div>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {positions.length === 0 && <div className="text-sm text-gray-400 rounded-lg border border-white/10 bg-white/5 p-4">No active copy position. Start a CopyGuard strategy to create one.</div>}
+        {positions.map((p, i) => (
+          <div key={`${p.asset}-${p.ts}-${i}`} className="rounded-lg bg-white/5 p-3 flex items-center gap-3 text-sm">
+            {p.side === "LONG" ? <ArrowUpRight className="w-4 h-4 text-green-400" /> : <ArrowDownRight className="w-4 h-4 text-red-400" />}
+            <div className="flex-1">
+              <div className="text-white font-semibold">{p.asset} · {p.side}</div>
+              <div className="text-xs text-gray-500">entry ${p.entry.toLocaleString()} · size {p.size.toFixed(5)}</div>
+            </div>
+            <span className={`font-mono text-xs ${p.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>{p.pnl >= 0 ? "+" : ""}{p.pnl.toFixed(4)} USDC</span>
+          </div>
+        ))}
+      </div>
+      <FlowExplainer items={[
+        { label: "Withdraw path", value: session?.settlement === "live" ? "Live escrow withdrawal should execute through CopyTradeVault." : "Current session is fallback/local; withdraw closes local state and makes no live settlement claim.", tone: session?.settlement === "fallback" ? "warn" : "safe" },
+        { label: "Last action", value: session?.lastAction ?? "No copy session yet." },
+      ]} />
     </div>
   );
 }
@@ -595,9 +968,17 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
     if (purchased.includes(trace.id) || buying) return;
     setBuying(trace.id);
     setBuyErr(null);
+    let userSignature: string;
+    try {
+      userSignature = await requestWalletPerCallSignature(ARC_USER_FUNDING_SCOPE, trace.price, "svc_arc_reasoning");
+    } catch {
+      setBuying(null);
+      setBuyErr("Wallet signature is required before unlocking this $0.01 trace. Agent Treasury is not used for manual unlocks.");
+      return;
+    }
     try {
       const res = await fetch(`${SERVER}/api/gateway/svc_arc_reasoning`, {
-        headers: paidGatewayHeaders("arcmind-user"),
+        headers: paidGatewayHeaders("arcmind-user", { "X-User-Signature": userSignature }),
         signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) throw new Error(`Gateway ${res.status}`);
@@ -613,7 +994,11 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
         currency: "USDC",
         network: "arc-l1",
         kind: "arcmind.trace.purchase",
-        payload: { traceId: trace.id, receiptId },
+        payload: fundingReceiptPayload(ARC_USER_FUNDING_SCOPE, trace.price, {
+          mode: "wallet_per_call",
+          serviceId: "svc_arc_reasoning",
+          settlement: "live",
+        }, { traceId: trace.id, receiptId, userSignature }),
       });
     } catch (e: unknown) {
       const receiptId = localReceiptId("trace_local");
@@ -627,7 +1012,11 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
         currency: "USDC",
         network: "arc-testnet",
         kind: "arcmind.trace.purchase.local_fallback",
-        payload: { traceId: trace.id, receiptId, displayPrice: trace.price, fallback: true, reason: note },
+        payload: fundingReceiptPayload(ARC_USER_FUNDING_SCOPE, trace.price, {
+          mode: "wallet_per_call",
+          serviceId: "svc_arc_reasoning",
+          settlement: "fallback",
+        }, { traceId: trace.id, receiptId, displayPrice: trace.price, reason: note, userSignature }),
       });
     } finally {
       setBuying(null);
@@ -674,7 +1063,7 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
         items={[
           { label: "Why it exists", value: "Users see why the agent wants to copy, reduce, hold USDC or move to yield." },
           { label: "Source proof", value: "Live traces come from /api/arc-decisions and ArcMindRegistry; local fallback traces are marked local." },
-          { label: "Payment", value: "Trace unlock = $0.01 x402. Register/Record = ArcMindRegistry smart-contract write; no trace fee." },
+          { label: "Payment", value: "Trace unlock = wallet signature + $0.01 x402. Agent Treasury is not used for manual user unlocks." },
           { label: "Safety", value: "Refund review flags a receipt without hiding the evidence already revealed." },
         ]}
       />
@@ -766,7 +1155,7 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
                       {buyErr && buying === null && (
                         <div className="text-[10.5px] text-amber-300">{buyErr}</div>
                       )}
-                      <div className="text-[10px] text-gray-600 text-center">Circle Gateway Nanopayment · Arc testnet</div>
+                      <div className="text-[10px] text-gray-600 text-center">User wallet signature · Circle Gateway Nanopayment · Arc testnet</div>
                     </div>
                   )}
                 </div>
@@ -842,6 +1231,13 @@ const SIGNAL_SOURCES: SignalSource[] = [
   { id: "onchain",     name: "On-chain Whale Tracker", description: "Wallet flows >$100k last 1h",        price: 0.003, icon: "🐋", unit: "M net", range: [-50, 50],   live: false },
 ];
 
+function signalServiceId(sourceId: string): string {
+  if (sourceId === "hyperliquid") return "svc_arc_signal_hl";
+  if (sourceId === "polymarket") return "svc_arc_signal_poly";
+  if (sourceId === "news") return "svc_arc_signal_news";
+  return "svc_arc_signal_onchain";
+}
+
 interface FetchedSignal {
   id: string;
   value: string;
@@ -865,6 +1261,13 @@ export function ArcMindSignalHubWidget({ workspace }: { workspace: Workspace }) 
   async function fetchSignal(src: SignalSource) {
     setLoading(src.id);
     let value: string | null = null;
+    const serviceId = signalServiceId(src.id);
+    const funding = checkFunding(ARC_AGENT_FUNDING_SCOPE, src.price, { mode: "treasury", serviceId });
+    if (!funding.ok) {
+      setQueryAnswer(`Blocked before fetching ${src.name}: ${funding.reason}. Fund Arc Agent Treasury in Agent Engine first; this paid source cannot charge an unfunded agent.`);
+      setLoading(null);
+      return;
+    }
 
     if (src.id === "hyperliquid") {
       try {
@@ -920,6 +1323,12 @@ export function ArcMindSignalHubWidget({ workspace }: { workspace: Workspace }) 
       const filtered = prev.filter((s: FetchedSignal) => s.id !== src.id);
       return [...filtered, { id: src.id, value, ts: Date.now() }];
     });
+    recordFundingSpend(ARC_AGENT_FUNDING_SCOPE, src.price, {
+      mode: "treasury",
+      serviceId,
+      settlement: "fallback",
+    });
+    setQueryAnswer(`${src.name} fetched with Arc Agent Treasury preflight. This source path is currently public/local in the UI, so no live USDC was deducted.`);
     setLoading(null);
   }
 
@@ -985,7 +1394,7 @@ export function ArcMindSignalHubWidget({ workspace }: { workspace: Workspace }) 
       <FlowExplainer
         items={[
           { label: "User question", value: "Is it safe to copy ArcMind now, reduce exposure, or keep capital in USDC/USYC?" },
-          { label: "Live source", value: "Hyperliquid public API for ETH OI/funding; backend /api/signals for Polymarket and whale data when configured." },
+          { label: "Funding", value: "Paid source fetches require Arc Agent Treasury preflight. Public/local source fetches are marked as no live USDC deducted." },
           { label: "Decision output", value: "ALLOW, REDUCE or HOLD. The result feeds Copy Strategy, Risk-Off Vault and Kill Switch." },
           { label: "Safety rule", value: "Unavailable providers are not filled with invented values. They stay missing inputs.", tone: "warn" },
         ]}

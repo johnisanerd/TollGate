@@ -9,7 +9,7 @@
  *   5. Net profit captured, receipt signed (EIP-191)
  *   6. AgentScore updated live
  */
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useRef, useState } from "react";
 
 const SERVER_URL = (import.meta.env as Record<string, string | undefined>)["VITE_SERVER_URL"] ?? "";
 import {
@@ -26,7 +26,15 @@ import {
 } from "lucide-react";
 import { ActionPanel } from "../ActionPanel";
 import { AgentScoreComparison } from "../AgentScoreBadge";
-import { checkBudget, spend, getPolicy, getRemainingToday, getTreasuryState, fundTreasury, type TreasuryState } from "../../../lib/budget";
+import {
+  checkFunding,
+  getFundingPolicy,
+  getTreasuryState,
+  recordFundingSpend,
+  ARC_TREASURY_TOPUP_USD,
+  type FundingScope,
+} from "../../../workspaces/agora/funding";
+import { TreasuryPanel } from "../../../workspaces/agora/TreasuryPanel";
 import { updateReputation } from "../../../lib/agentCard";
 
 type StepStatus = "idle" | "running" | "done" | "failed";
@@ -42,7 +50,7 @@ type Step = {
 const AGENT_ID = "agent_arc_arb";
 const PROVIDER_ID = "agent_arc_executor";
 const REQUIRED_SPEND_USD = 0.07;
-const DEFAULT_TOP_UP_USD = 1.0;
+const ARC_FUNDING_SCOPE: FundingScope = { workspaceId: "agora", agentId: AGENT_ID, project: "arc" };
 
 function paidGatewayHeaders(agentId: string, extra: Record<string, string> = {}): Record<string, string> {
   return { "X-Agent-Id": agentId, ...extra };
@@ -108,16 +116,7 @@ export function AgoraTradingWidget() {
   const [grossProfit, setGrossProfit] = useState<number | null>(null);
   const [profit, setProfit]   = useState<number | null>(null);
   const [paid, setPaid]       = useState<number | null>(null);
-  const [remaining, setRemaining] = useState(() => getRemainingToday(AGENT_ID));
-  const [treasury, setTreasury] = useState<TreasuryState>(() => getTreasuryState(AGENT_ID));
-  const [funding, setFunding] = useState(false);
-  const [fundingMsg, setFundingMsg] = useState<string | null>(null);
   const cancelRef = useRef(false);
-
-  useEffect(() => {
-    setRemaining(getRemainingToday(AGENT_ID));
-    setTreasury(getTreasuryState(AGENT_ID));
-  }, []);
 
   function addLog(msg: string) { setLog((p) => [...p, msg]); }
   function setStep(id: string, status: StepStatus, detail?: string) {
@@ -131,37 +130,9 @@ export function AgoraTradingWidget() {
     return true;
   }
 
-  async function approveTreasuryAllowance() {
-    setFunding(true);
-    setFundingMsg(null);
-    try {
-      const eth = (window as unknown as { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum;
-      if (!eth) throw new Error("wallet_unavailable");
-      const accounts = await eth.request({ method: "eth_requestAccounts" }) as string[];
-      const account = accounts[0];
-      if (!account) throw new Error("wallet_unavailable");
-      const msg = [
-        "Authorize Agent Treasury allowance",
-        `Agent: ${AGENT_ID}`,
-        `Amount: ${DEFAULT_TOP_UP_USD.toFixed(2)} USDC`,
-        "Purpose: x402 service calls only",
-        `Per-call max: ${getPolicy(AGENT_ID).maxPerTxUsd.toFixed(2)} USDC`,
-        `Timestamp: ${new Date().toISOString()}`,
-      ].join("\n");
-      const sig = await eth.request({ method: "personal_sign", params: [msg, account] }) as string;
-      fundTreasury(AGENT_ID, DEFAULT_TOP_UP_USD, sig);
-      setTreasury(getTreasuryState(AGENT_ID));
-      setFundingMsg(`Signed treasury allowance added: $${DEFAULT_TOP_UP_USD.toFixed(2)} USDC. This is the source agents spend from; without this signature, the agent cannot pay.`);
-    } catch {
-      setFundingMsg("Treasury allowance was not signed. Agent has no approved funds and cannot execute x402 payments.");
-    } finally {
-      setFunding(false);
-    }
-  }
-
   async function runAgent() {
     if (running) return;
-    const preflight = checkBudget(AGENT_ID, REQUIRED_SPEND_USD);
+    const preflight = checkFunding(ARC_FUNDING_SCOPE, REQUIRED_SPEND_USD, { mode: "treasury", serviceId: "svc_arc_arb" });
     if (!preflight.ok) {
       setDone(false);
       setPaid(null);
@@ -211,16 +182,16 @@ export function AgoraTradingWidget() {
 
       // Step 2: Budget check
       setStep("budget", "running");
-      const policy = getPolicy(AGENT_ID);
+      const policy = getFundingPolicy(ARC_FUNDING_SCOPE);
       addLog(`ArcArb: AgentTreasury.authorize(${AGENT_ID}, $${REQUIRED_SPEND_USD.toFixed(2)}) -> policy + balance check...`);
       await sleep(700);
-      const budgetResult = checkBudget(AGENT_ID, REQUIRED_SPEND_USD);
+      const budgetResult = checkFunding(ARC_FUNDING_SCOPE, REQUIRED_SPEND_USD, { mode: "treasury", serviceId: "svc_arc_arb" });
       if (!budgetResult.ok) {
         setStep("budget", "failed", `Blocked: ${budgetResult.reason}`);
         addLog(`✗ Budget check failed: ${budgetResult.reason}`);
         return;
       }
-      setStep("budget", "done", `Approved from Agent Treasury / $${getTreasuryState(AGENT_ID).availableUsd.toFixed(2)} available before spend`);
+      setStep("budget", "done", `Approved from Agent Treasury / $${getTreasuryState(ARC_FUNDING_SCOPE).availableUsd.toFixed(2)} available before spend`);
       addLog(`Agent Treasury approved $${REQUIRED_SPEND_USD.toFixed(2)} (oracle $0.02 + executor $0.05)`);
       await sleep(300);
       if (wasCancelled()) return;
@@ -247,10 +218,12 @@ export function AgoraTradingWidget() {
       }
       setReceiptId(rid);
       setReceiptMode(paymentFallback ? "fallback" : "live");
-      if (!paymentFallback) spend(AGENT_ID, REQUIRED_SPEND_USD);
+      recordFundingSpend(ARC_FUNDING_SCOPE, REQUIRED_SPEND_USD, {
+        mode: "treasury",
+        serviceId: "svc_arc_arb",
+        settlement: paymentFallback ? "fallback" : "live",
+      });
       setPaid(paymentFallback ? 0 : REQUIRED_SPEND_USD);
-      setRemaining(getRemainingToday(AGENT_ID));
-      setTreasury(getTreasuryState(AGENT_ID));
       setStep("pay", "done", paymentFallback
         ? `${rid.slice(0, 18)}... / fallback receipt / no live USDC moved`
         : `${rid.slice(0, 18)}... / $0.05 USDC / arc-testnet`);
@@ -314,16 +287,11 @@ export function AgoraTradingWidget() {
     cancelRef.current = false;
     setSteps(INITIAL_STEPS.map((s) => ({ ...s, status: "idle" as StepStatus, detail: undefined })));
     setLog([]); setDone(false); setReceiptId(null); setReceiptMode(null); setGrossProfit(null); setProfit(null); setPaid(null);
-    setRemaining(getRemainingToday(AGENT_ID));
-    setTreasury(getTreasuryState(AGENT_ID));
   }
 
   function cancelRun() {
     cancelRef.current = true;
   }
-
-  const policy = getPolicy(AGENT_ID);
-  const canFundRun = treasury.availableUsd >= REQUIRED_SPEND_USD && !policy.paused;
 
   return (
     <ActionPanel
@@ -331,59 +299,14 @@ export function AgoraTradingWidget() {
       title="Cross-Platform Agent Engine — Arc L1"
       sub={<>ArcArb Agent can only spend from a signed <strong>Agent Treasury allowance</strong>. x402 is the payment rail; Treasury + Policy decide whether the agent may use it.</>}
     >
-      {/* Agent budget strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 8, marginBottom: 14 }}>
-        {[
-          { label: "Treasury available", val: `$${treasury.availableUsd.toFixed(2)} USDC` },
-          { label: "Requested spend",    val: `$${REQUIRED_SPEND_USD.toFixed(2)} USDC` },
-          { label: "Daily policy",       val: `$${policy.dailyLimitUsd.toFixed(2)} / day` },
-          { label: "Max per call",       val: `$${policy.maxPerTxUsd.toFixed(2)}` },
-        ].map((g) => (
-          <div key={g.label} style={{ background: "var(--bg-2)", borderRadius: 9, padding: "8px 10px" }}>
-            <div style={lbl}>{g.label}</div>
-            <div style={{ fontWeight: 700, fontSize: ".82rem", marginTop: 2 }}>{g.val}</div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{
-        marginBottom: 14,
-        padding: "12px 14px",
-        borderRadius: 12,
-        border: canFundRun ? "1px solid rgba(34,197,94,0.35)" : "1px solid rgba(251,191,36,0.45)",
-        background: canFundRun ? "rgba(34,197,94,0.07)" : "rgba(251,191,36,0.08)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "space-between" }}>
-          <div style={{ minWidth: 220, flex: "1 1 260px" }}>
-            <div style={{ fontSize: ".78rem", fontWeight: 900, color: canFundRun ? "var(--green)" : "#fbbf24" }}>
-              {canFundRun ? "Agent Treasury funded" : "Agent has no spendable funds"}
-            </div>
-            <div style={{ fontSize: ".72rem", color: "#dbeafe", lineHeight: 1.55, marginTop: 4 }}>
-              The agent does not own your wallet. It asks Treasury for an allowance; if you do not sign an allowance, x402 payment execution is blocked before any API call can charge funds.
-            </div>
-          </div>
-          <button
-            onClick={approveTreasuryAllowance}
-            disabled={funding}
-            style={{
-              border: "1px solid rgba(96,165,250,0.55)",
-              borderRadius: 10,
-              background: "linear-gradient(135deg, #2563eb 0%, #22d3ee 100%)",
-              color: "#03121f",
-              fontWeight: 900,
-              fontSize: ".76rem",
-              padding: "10px 12px",
-              cursor: funding ? "wait" : "pointer",
-            }}
-          >
-            {funding ? "Waiting for wallet..." : `Sign $${DEFAULT_TOP_UP_USD.toFixed(2)} treasury allowance`}
-          </button>
-        </div>
-        {fundingMsg && (
-          <div style={{ marginTop: 10, fontSize: ".7rem", color: fundingMsg.includes("not signed") ? "#fca5a5" : "#86efac" }}>
-            {fundingMsg}
-          </div>
-        )}
+      {/* Agent Treasury panel — balance strip, signed-allowance button, policy + spend log */}
+      <div style={{ marginBottom: 14 }}>
+        <TreasuryPanel
+          scope={ARC_FUNDING_SCOPE}
+          label="Cross-Platform Agent Engine"
+          defaultTopUpUsd={ARC_TREASURY_TOPUP_USD}
+          requiredSpendUsd={REQUIRED_SPEND_USD}
+        />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8, marginBottom: 14 }}>

@@ -1,25 +1,20 @@
 import { type ReactNode, useState, useEffect, useRef, useCallback } from "react";
-import { TrendingUp, Zap, ShieldCheck, Clock, Bell, BellOff, AlertTriangle, Plus, Trash2, CircleDollarSign } from "lucide-react";
+import { TrendingUp, Zap, ShieldCheck, Clock, Bell, BellOff, AlertTriangle, Plus, Trash2, Activity, Code2, Settings } from "lucide-react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
 import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx, OverviewCtx } from "../_types";
-import { Code, Robot, Receipt as RIco } from "../../icons402";
+import { Receipt as RIco } from "../../icons402";
 import { getAgoraConfig, getArcAgentStats } from "../../lib/agora";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { useLocalStore } from "../../lib/storage";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
+import { ArcMindOverviewWidget } from "../../components/widgets/agora/ArcMindOverviewWidget";
+import { ArcDeveloperConsoleWidget } from "../../components/widgets/agora/ArcDeveloperConsoleWidget";
 import {
-  ArcControlBudgetWidget,
-  ArcControlDecisionRoomWidget,
-  ArcControlDeveloperWidget,
-  ArcControlExecutionWidget,
-  ArcControlPositionsWidget,
-  ArcControlReceiptsWidget,
-  ArcControlRiskGuardWidget,
-  ArcControlSourcesWidget,
-  ArcControlStartWidget,
-  ArcControlStrategiesWidget,
-} from "../../components/widgets/agora/ArcControlWidgets";
+  ArcMindCopyTradingWidget,
+  ArcMindReasoningWidget,
+} from "../../components/widgets/agora/ArcMindWidgets";
+import { ArcControlReceiptsWidget } from "../../components/widgets/agora/ArcControlWidgets";
 
 // в”Ђв”Ђ Re-exports (kept for backward compat) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 // в”Ђв”Ђ Signature block в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
@@ -43,69 +38,48 @@ export function cards({
   onGoReceipts,
 }: CardCtx & { onGoReceipts: () => void }): CardDef[] {
   return [
-    { light: true, ico: TrendingUp, title: "Run cross-chain arb route", sub: "ETH/USDC gap Arc vs Base · $0.05 · CCTP", metric: "CCTP route", detail: "Arc vs Base", accent: "#22d3ee", onClick: () => onGoTab("arbitrage") || onGoTab("arb") },
-    { ico: CircleDollarSign, title: "Adaptive portfolio rebalancer", sub: "multi-asset · USDC settlement · Paymaster", metric: "Risk-off", detail: "USDC/USYC", accent: "#10b981", onClick: () => onGoTab("portfolio") },
-    { ico: Zap, title: "Paid reasoning proof unlock", sub: "x402 → USDC → trace receipt", metric: "$0.01", detail: "proof", accent: "#f59e0b", onClick: () => onGoTab("reasoning") },
-    { ico: Robot, title: "Kill Switch safety policy", sub: "drawdown threshold · pause · stop", metric: "Risk cap", detail: "15%", accent: "#8b5cf6", onClick: () => onGoTab("kill") },
-    { ico: Code, title: "App Kit settlement console", sub: "Balance · Bridge · Swap · Send", metric: "Circle stack", detail: "Arc tools", accent: "#3b82f6", onClick: () => onGoTab("app kit") },
-    { ico: RIco, title: "View all receipts", sub: `${wsReceipts.length} Arc payments`, metric: `${wsReceipts.length}`, detail: "receipts", accent: "#fb7185", onClick: () => onGoReceipts() },
+    { light: true, ico: TrendingUp, title: "Copy ArcMind with $1 USDC", sub: "Stake into CopyTradeEscrow — ArcMind trades ETH/USDC for you", metric: "$1 min", detail: "user wallet", accent: "#8b5cf6", onClick: () => onGoTab("Copy & Position") },
+    { ico: Activity, title: "View live decisions", sub: "BUY / SELL / HOLD with on-chain reasoning + data sources", metric: "30 min", detail: "Arc L1", accent: "#22d3ee", onClick: () => onGoTab("Signal Feed") },
+    { ico: Zap, title: "ArcMind algorithm profile", sub: "Win rate, Sharpe, 30d return — answers 'who am I copying?'", metric: "AI agent", detail: "not human", accent: "#a78bfa", onClick: () => onGoTab("Overview") },
+    { ico: ShieldCheck, title: "Risk controls", sub: "Per-trade TP/SL, max drawdown, copy mode, slippage", metric: "Binance-style", detail: "advanced", accent: "#10b981", onClick: () => onGoTab("Copy & Position") },
+    { ico: Code2, title: "Developer Console", sub: "Agent budget, sources, x402, App Kit, CCTP (power users)", metric: "13 tools", detail: "advanced", accent: "#f59e0b", onClick: () => onGoTab("Developer Console") },
+    { ico: RIco, title: "View receipts", sub: `${wsReceipts.length} Arc payments with ArcScan links`, metric: `${wsReceipts.length}`, detail: "on-chain", accent: "#fb7185", onClick: () => onGoReceipts() },
   ];
 }
 
-// в”Ђв”Ђ Tab renderer в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+// ─── Tab dispatcher (exact-match map, no .includes order-dependence) ──────────
+
+type TabRenderer = (ctx: TabCtx) => ReactNode;
+
+const TAB_MAP: Record<string, TabRenderer> = {
+  "overview": (ctx) => <ArcMindOverviewWidget workspace={ctx.workspace} onGoTab={ctx.onGoTab} />,
+  "signal feed": (ctx) => <ArcMindReasoningWidget workspace={ctx.workspace} />,
+  "copy & position": (ctx) => <ArcMindCopyTradingWidget workspace={ctx.workspace} />,
+  "receipts": (ctx) => <ArcControlReceiptsWidget workspace={ctx.workspace} />,
+  "developer console": (ctx) => <ArcDeveloperConsoleWidget workspace={ctx.workspace} />,
+};
+
 export function renderTab(
   t: string,
   workspace: Workspace,
   _receipts: Receipt[],
   _onOpenPayment: (s: Service) => void,
 ): ReactNode | null {
-  const nodes: ReactNode[] = [];
-  const tab = t.toLowerCase();
-
-  if (tab.includes("start") || tab.includes("overview")) {
-    nodes.push(<ArcControlStartWidget key="control-start" workspace={workspace} />);
-  } else if (tab.includes("budget")) {
-    nodes.push(<ArcControlBudgetWidget key="control-budget" workspace={workspace} />);
-  } else if (tab.includes("strateg")) {
-    nodes.push(<ArcControlStrategiesWidget key="control-strategies" workspace={workspace} />);
-  } else if (tab.includes("source")) {
-    nodes.push(<ArcControlSourcesWidget key="control-sources" workspace={workspace} />);
-  } else if (tab.includes("decision")) {
-    nodes.push(<ArcControlDecisionRoomWidget key="control-decision" workspace={workspace} />);
-  } else if (tab.includes("execution")) {
-    nodes.push(<ArcControlExecutionWidget key="control-execution" workspace={workspace} />);
-  } else if (tab.includes("position")) {
-    nodes.push(<ArcControlPositionsWidget key="control-positions" workspace={workspace} />);
-  } else if (tab.includes("risk") || tab.includes("guard")) {
-    nodes.push(<ArcControlRiskGuardWidget key="control-risk" workspace={workspace} />);
-  } else if (tab.includes("receipt")) {
-    nodes.push(<ArcControlReceiptsWidget key="control-receipts" workspace={workspace} />);
-  } else if (tab.includes("developer") || tab.includes("app kit") || tab.includes("appkit") || tab.includes("kit") || tab.includes("x402") || tab.includes("circle") || tab.includes("arbitrage") || tab.includes("arb") || tab.includes("engine")) {
-    nodes.push(
-      <ArcControlDeveloperWidget key="control-developer" workspace={workspace}>
-        <ArcContractsPanel workspace={workspace} />
-        <AgoraEcosystemLinks />
-      </ArcControlDeveloperWidget>,
-    );
-  }
-
-  return nodes.length > 0 ? <>{nodes}</> : null;
+  const fn = TAB_MAP[t.toLowerCase()];
+  if (!fn) return null;
+  return fn({
+    workspace,
+    services: [],
+    receipts: _receipts,
+    onOpenPayment: _onOpenPayment,
+    onGoTab: () => false,
+    onGoReceipts: () => {},
+  });
 }
 
-// в”Ђв”Ђ Agent extra (none for agora) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 export function renderTabContent(tab: string, ctx: TabCtx): ReactNode {
-  const { workspace, onGoTab } = ctx;
-  const t = tab.toLowerCase();
-  if (t.includes("start") || t.includes("overview")) return <ArcControlStartWidget workspace={workspace} onGoTab={onGoTab} />;
-  if (t.includes("budget")) return <ArcControlBudgetWidget workspace={workspace} />;
-  if (t.includes("strateg")) return <ArcControlStrategiesWidget workspace={workspace} />;
-  if (t.includes("source")) return <ArcControlSourcesWidget workspace={workspace} />;
-  if (t.includes("decision")) return <ArcControlDecisionRoomWidget workspace={workspace} />;
-  if (t.includes("execution")) return <ArcControlExecutionWidget workspace={workspace} />;
-  if (t.includes("position")) return <ArcControlPositionsWidget workspace={workspace} />;
-  if (t.includes("risk") || t.includes("guard")) return <ArcControlRiskGuardWidget workspace={workspace} />;
-  if (t.includes("receipt")) return <ArcControlReceiptsWidget workspace={workspace} />;
-  return <ArcControlDeveloperWidget workspace={workspace} />;
+  const fn = TAB_MAP[tab.toLowerCase()];
+  return fn ? fn(ctx) : <ArcMindOverviewWidget workspace={ctx.workspace} onGoTab={ctx.onGoTab} />;
 }
 
 export function renderAgentExtra(_workspace: Workspace): ReactNode | null {
@@ -785,12 +759,12 @@ function ArcRevenueWidget() {
   );
 }
 
-// в”Ђв”Ђ Overview extra в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+// ─── Overview extra ──────────────────────────────────────────────────────────
 export function renderOverviewExtra(ctx: OverviewCtx): ReactNode | null {
   const { workspace, onGoTab } = ctx;
   return (
     <>
-      <ArcControlStartWidget workspace={workspace} onGoTab={onGoTab} />
+      <ArcMindOverviewWidget workspace={workspace} onGoTab={onGoTab} />
       <ArcContractsPanel workspace={workspace} />
       <AgoraEcosystemLinks />
     </>
@@ -800,24 +774,16 @@ export function renderOverviewExtra(ctx: OverviewCtx): ReactNode | null {
 // ── Tab metadata ──────────────────────────────────────────────────────────────
 export function tabMeta(tab: string): TabMeta | null {
   const t = tab.toLowerCase();
-  if (t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard"))
-    return { title: "Decision Guard", sub: "Live market sources, debate, PnL and decision logs for HOLD, REDUCE or ALLOW actions on Arc.", intent: "RFB 02 / 03", proof: "sourced signals + Arc receipts" };
-  if (t.includes("reasoning") || t.includes("trace"))
-    return { title: "Reasoning trace marketplace", sub: "Inspect the evidence, confidence shift and source contribution behind each agent decision.", intent: "RFB 06", proof: "trace hash + paid unlock" };
-  if (t.includes("copy"))
-    return { title: "Copy ArcMind strategy", sub: "Start, pause, withdraw and settle a copy session from ArcMind's ETH/USDC decisions. No backtest fee is charged here.", intent: "RFB 06", proof: "copy controls + risk rules" };
-  if (t.includes("kill"))
-    return { title: "Autonomous risk kill switch", sub: "Configure drawdown, liquidation and source-divergence protections before the agent keeps trading.", intent: "RFB 01", proof: "Telegram + Arc action trail" };
-  if (t.includes("usyc") || t.includes("yield") || t.includes("swap") || t.includes("risk-off") || t.includes("vault"))
-    return { title: "Risk-off capital router", sub: "Move idle capital between USDC, USYC and swap routes when the agent detects hostile conditions.", intent: "RFB 04", proof: "USDC denominated settlement" };
-  if (t.includes("arbitrage") || t.includes("arb") || t.includes("engine"))
-    return { title: "Cross-platform arbitrage route", sub: "Detect price gaps, choose route, estimate slippage and show the CCTP/Gateway path before execution.", intent: "RFB 05", proof: "route + receipt" };
-  if (t.includes("portfolio"))
-    return { title: "Adaptive portfolio manager", sub: "Detect market regime, rebalance exposure and park capital in risk-off assets when needed.", intent: "RFB 04", proof: "allocation plan" };
-  if (t.includes("circle") || t.includes("x402") || t.includes("kit") || t.includes("merchant"))
-    return { title: "Circle and Arc tool console", sub: "Use App Kit, CCTP, Gateway, x402 and nanopayment flows as the product's settlement layer.", intent: "Circle stack", proof: "USDC payments on Arc" };
-  if (t.includes("receipt"))
-    return { title: "Arc settlement ledger", sub: "Review paid agent actions and receipts that prove which product flows actually settled.", intent: "Proof layer", proof: "receipt history" };
+  if (t === "overview")
+    return { title: "ArcMind Overview", sub: "Live ETH price, ArcMind status, last decision, your position, and a single button to start copying.", intent: "user entry", proof: "live algorithm + your wallet" };
+  if (t === "signal feed")
+    return { title: "Live Signal Feed", sub: "Every BUY/SELL/HOLD decision with natural-language reasoning, the data sources used, and the on-chain Arc tx that anchors it.", intent: "transparent reasoning", proof: "ArcMindRegistry decision hash" };
+  if (t === "copy & position")
+    return { title: "Copy ArcMind & Manage Position", sub: "Stake USDC, choose risk profile, set Binance/Bybit-style per-trade TP/SL/slippage, watch your live PnL, pause or exit any time.", intent: "user copy flow", proof: "CopyTradeEscrow on Arc + ArcScan links" };
+  if (t === "receipts")
+    return { title: "On-chain Receipts", sub: "Every paid action and tx hash, clickable to ArcScan.", intent: "proof layer", proof: "receipt history" };
+  if (t === "developer console")
+    return { title: "Developer Console", sub: "Power-user view: agent budget, strategies, data sources, decision room, execution queue, risk guard, x402, App Kit, CCTP, Circle tools.", intent: "advanced", proof: "13 control widgets" };
   return null;
 }
 
