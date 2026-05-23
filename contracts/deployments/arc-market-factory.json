@@ -1,0 +1,28 @@
+{
+  "network": "arcTestnet",
+  "chainId": 5042002,
+  "deployedAt": "2026-05-23T15:39:16.070Z",
+  "deployer": "0x82736f84Ad234566180F902237e2Fb4c35177bDB",
+  "admin": "0x82736f84Ad234566180F902237e2Fb4c35177bDB",
+  "operator": "0x82736f84Ad234566180F902237e2Fb4c35177bDB",
+  "addresses": {
+    "agentRegistry": "0x8aD47542EBbd92696E7C69E756bdf654d867581d",
+    "marketFactory": "0x9C36Aa5fa856893Ae70E33014985678E4Ce198AD",
+    "initialMarket": "0xaef1bac4a9660bABCc78304580E1ea67749f0351",
+    "usdc": "0x3600000000000000000000000000000000000000"
+  },
+  "initialMarket": {
+    "address": "0xaef1bac4a9660bABCc78304580E1ea67749f0351",
+    "baseSymbol": "ETH/USDC",
+    "performanceFeeBps": 500,
+    "killThresholdBps": 1500,
+    "minStake": "1000000",
+    "maxStake": "1000000000"
+  },
+  "explorer": "https://testnet.arcscan.app",
+  "txHashes": {
+    "agentRegistry": "0x294dd78563f0b06a81680488565c5d4bd0c22f9af1733648599e5369b06d9701",
+    "marketFactory": "0x8ea44f0c1ff492b35fa49ed3e05adf832de424894e82914f8f7bd6a8283528a9",
+    "initialMarket": "0xd3cdce8668421477326291f87e80517a4723fa324c042a034923a1d7c75f0d65"
+  }
+}
