@@ -108,6 +108,68 @@ async function callOpenRouter(input: LlmRouteInput): Promise<LlmRouteOutput | nu
   }
 }
 
+/**
+ * Hermes — self-hosted Nous Research agent runtime.
+ *
+ * Hermes exposes an OpenAI-compatible `/v1/chat/completions` endpoint on
+ * `HERMES_URL` (default: http://localhost:8080). Auth via optional bearer
+ * `HERMES_API_KEY`. Used as a sovereign fallback when external APIs fail or
+ * for sensitive prompts that should not leave the operator's infra.
+ *
+ * Docs: https://hermes-agent.nousresearch.com/docs/
+ */
+async function callHermes(input: LlmRouteInput): Promise<LlmRouteOutput | null> {
+  const baseUrl = process.env.HERMES_URL;
+  if (!baseUrl) return null;
+  const model = input.model ?? process.env.HERMES_MODEL ?? "hermes-3-llama-3.1-8b";
+  const apiKey = process.env.HERMES_API_KEY;
+  const messages: { role: "system" | "user"; content: string }[] = [];
+  if (input.system) messages.push({ role: "system", content: input.system });
+  messages.push({ role: "user", content: input.prompt });
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model,
+        messages,
+        max_tokens: clampMaxTokens(input.maxTokens),
+        temperature: clampTemperature(input.temperature),
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      return {
+        ok: false, provider: "nous", model, text: "",
+        reason: `hermes_http_${res.status}: ${errText.slice(0, 200)}`,
+      };
+    }
+    const data = await res.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      error?: { message?: string };
+    };
+    const text = data.choices?.[0]?.message?.content ?? "";
+    if (!text) {
+      return {
+        ok: false, provider: "nous", model, text: "",
+        reason: data.error?.message ?? "empty_completion",
+      };
+    }
+    return { ok: true, provider: "nous", model, text, usage: data.usage };
+  } catch (err) {
+    return {
+      ok: false, provider: "nous", model, text: "",
+      reason: `hermes_exception: ${(err as Error).message?.slice(0, 200) ?? "unknown"}`,
+    };
+  }
+}
+
 async function callAnthropic(input: LlmRouteInput): Promise<LlmRouteOutput | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
@@ -189,6 +251,7 @@ export async function routeLlmCall(input: LlmRouteInput): Promise<LlmRouteOutput
   const attempts: Array<() => Promise<LlmRouteOutput | null>> = [
     () => callOpenRouter(input),
     () => callAnthropic(input),
+    () => callHermes(input),
   ];
 
   let lastFailure: LlmRouteOutput | null = null;
@@ -210,7 +273,7 @@ export async function routeLlmCall(input: LlmRouteInput): Promise<LlmRouteOutput
 }
 
 export function isLlmConfigured(): boolean {
-  return Boolean(process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY);
+  return Boolean(process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.HERMES_URL);
 }
 
 export const __testing = { clampMaxTokens, clampTemperature, FREE_DEFAULT_MODEL };

@@ -11,6 +11,10 @@ import "@fontsource/libre-bodoni/600.css";
 import App from "./App";
 import "./theme.css";
 import "./styles.css";
+import { analyticsEvents } from "./lib/analytics";
+
+// Boot-time analytics pageview (no-op when VITE_POSTHOG_KEY is unset).
+analyticsEvents.pageView(typeof window !== "undefined" ? window.location.pathname : "/");
 
 // Optional Sentry error tracking — set VITE_SENTRY_DSN to enable.
 // @sentry/react is intentionally not listed in package.json; it's loaded at

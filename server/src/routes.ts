@@ -64,6 +64,9 @@ import { buildSnapshot, onArbSnapshot, startArbScanner } from "./arb-scanner.js"
 import { getEthUsdPrice } from "./pyth.js";
 import { dispatchAlert, isAlertsConfigured } from "./alerts.js";
 import { getCircleStatus, createProgrammableWallet } from "./circle.js";
+import { isPinataConfigured, pinJson } from "./pinata.js";
+import { isFarcasterConfigured, postCast } from "./farcaster.js";
+import { isApifyConfigured, fetchNews } from "./apify.js";
 import {
   agentById,
   agents,
@@ -272,6 +275,56 @@ apiRouter.post("/circle/wallets/create", alertLimiter, async (req: Request, res:
     return;
   }
   const result = await createProgrammableWallet(name);
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+// ─── Pinata IPFS pinning ────────────────────────────────────────────────────
+
+apiRouter.get("/pinata/status", (_req: Request, res: Response) => {
+  res.json({ configured: isPinataConfigured() });
+});
+
+apiRouter.post("/pinata/pin", alertLimiter, async (req: Request, res: Response) => {
+  const name = typeof req.body?.name === "string" ? req.body.name : "";
+  const payload = req.body?.payload;
+  if (payload === undefined) {
+    res.status(400).json({ ok: false, reason: "payload_required" });
+    return;
+  }
+  const result = await pinJson(name, payload);
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+// ─── Farcaster (Neynar cast) ────────────────────────────────────────────────
+
+apiRouter.get("/farcaster/status", (_req: Request, res: Response) => {
+  res.json({ configured: isFarcasterConfigured() });
+});
+
+apiRouter.post("/farcaster/cast", alertLimiter, async (req: Request, res: Response) => {
+  const text = typeof req.body?.text === "string" ? req.body.text : "";
+  const channelId = typeof req.body?.channelId === "string" ? req.body.channelId : undefined;
+  const embedUrl = typeof req.body?.embedUrl === "string" ? req.body.embedUrl : undefined;
+  const opts: { channelId?: string; embedUrl?: string } = {};
+  if (channelId) opts.channelId = channelId;
+  if (embedUrl) opts.embedUrl = embedUrl;
+  const result = await postCast(text, opts);
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+// ─── Apify news scraper ─────────────────────────────────────────────────────
+
+apiRouter.get("/apify/status", (_req: Request, res: Response) => {
+  res.json({ configured: isApifyConfigured() });
+});
+
+apiRouter.get("/apify/news", exchangeLimiter, async (req: Request, res: Response) => {
+  const actorId = typeof req.query["actor"] === "string" ? req.query["actor"] : undefined;
+  const limit = typeof req.query["limit"] === "string" ? parseInt(req.query["limit"], 10) : undefined;
+  const opts: { actorId?: string; limit?: number } = {};
+  if (actorId) opts.actorId = actorId;
+  if (typeof limit === "number" && Number.isFinite(limit)) opts.limit = limit;
+  const result = await fetchNews(opts);
   res.status(result.ok ? 200 : 400).json(result);
 });
 

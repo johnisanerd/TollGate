@@ -5,12 +5,18 @@ import { isLlmConfigured, routeLlmCall, __testing } from "./llm.js";
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_OPENROUTER = process.env.OPENROUTER_API_KEY;
 const ORIGINAL_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
+const ORIGINAL_HERMES_URL = process.env.HERMES_URL;
+const ORIGINAL_HERMES_KEY = process.env.HERMES_API_KEY;
 
 function restoreEnv(): void {
   if (ORIGINAL_OPENROUTER === undefined) delete process.env.OPENROUTER_API_KEY;
   else process.env.OPENROUTER_API_KEY = ORIGINAL_OPENROUTER;
   if (ORIGINAL_ANTHROPIC === undefined) delete process.env.ANTHROPIC_API_KEY;
   else process.env.ANTHROPIC_API_KEY = ORIGINAL_ANTHROPIC;
+  if (ORIGINAL_HERMES_URL === undefined) delete process.env.HERMES_URL;
+  else process.env.HERMES_URL = ORIGINAL_HERMES_URL;
+  if (ORIGINAL_HERMES_KEY === undefined) delete process.env.HERMES_API_KEY;
+  else process.env.HERMES_API_KEY = ORIGINAL_HERMES_KEY;
 }
 
 describe("LLM proxy — input clamps", () => {
@@ -38,6 +44,8 @@ describe("LLM proxy — provider routing", () => {
   beforeEach(() => {
     delete process.env.OPENROUTER_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.HERMES_URL;
+    delete process.env.HERMES_API_KEY;
   });
   afterEach(() => {
     globalThis.fetch = ORIGINAL_FETCH;
@@ -149,5 +157,54 @@ describe("LLM proxy — provider routing", () => {
     assert.equal(r.ok, false);
     assert.equal(r.text, "");
     assert.match(r.reason ?? "", /empty_completion/);
+  });
+
+  it("isLlmConfigured includes HERMES_URL", () => {
+    assert.equal(isLlmConfigured(), false);
+    process.env.HERMES_URL = "http://localhost:8080";
+    assert.equal(isLlmConfigured(), true);
+  });
+
+  it("routes to Hermes when only HERMES_URL is set", async () => {
+    process.env.HERMES_URL = "http://localhost:8080";
+    let observedUrl = "";
+    let observedAuth = "";
+    globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+      observedUrl = String(url);
+      observedAuth = String((init?.headers as Record<string, string>)?.["Authorization"] ?? "");
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "CHOPPY — funding flat, OI mean-reverting." } }],
+        usage: { prompt_tokens: 4, completion_tokens: 9, total_tokens: 13 },
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const r = await routeLlmCall({ prompt: "regime?" });
+    assert.equal(r.ok, true);
+    assert.equal(r.provider, "nous");
+    assert.match(r.text, /CHOPPY/);
+    assert.equal(observedUrl, "http://localhost:8080/v1/chat/completions");
+    assert.equal(observedAuth, "", "no API key set → no Authorization header");
+  });
+
+  it("Hermes sends Authorization when HERMES_API_KEY is set", async () => {
+    process.env.HERMES_URL = "https://hermes.internal";
+    process.env.HERMES_API_KEY = "hk-test";
+    let observedAuth = "";
+    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+      observedAuth = String((init?.headers as Record<string, string>)?.["Authorization"] ?? "");
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 });
+    }) as typeof fetch;
+    const r = await routeLlmCall({ prompt: "ping" });
+    assert.equal(r.ok, true);
+    assert.equal(observedAuth, "Bearer hk-test");
+  });
+
+  it("Hermes returns ok=false on upstream HTTP error", async () => {
+    process.env.HERMES_URL = "http://localhost:8080";
+    globalThis.fetch = (async () => new Response("crashed", { status: 503 })) as typeof fetch;
+    const r = await routeLlmCall({ prompt: "ping" });
+    assert.equal(r.ok, false);
+    assert.equal(r.provider, "nous");
+    assert.match(r.reason ?? "", /hermes_http_503/);
   });
 });

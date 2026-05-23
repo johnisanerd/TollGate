@@ -1,0 +1,70 @@
+{
+  "$schema": "https://docs.galxe.com/schemas/campaign-v1.json",
+  "name": "Stake $1 on ArcMind — Earn the First Mover NFT",
+  "summary": "Stake at least 1 USDC into the live ArcMind ETH/USDC copy-trade market on Arc L1 testnet. Receive a non-transferable badge proving you were an early user of the first ERC-8004/8183-compliant autonomous trading agent.",
+  "campaignType": "OnChainGalxe",
+  "rewardType": "OAT",
+  "network": {
+    "chainName": "Arc Testnet",
+    "chainId": 5042002,
+    "explorer": "https://testnet.arcscan.app",
+    "rpcUrl": "https://rpc.testnet.arc-node.thecanteenapp.com/v1/public"
+  },
+  "contracts": {
+    "marketFactory": "0x9C36Aa5fa856893Ae70E33014985678E4Ce198AD",
+    "agentRegistry": "0x8aD47542EBbd92696E7C69E756bdf654d867581d",
+    "initialMarket": "0xaef1bac4a9660bABCc78304580E1ea67749f0351",
+    "usdc": "0x3600000000000000000000000000000000000000"
+  },
+  "steps": [
+    {
+      "id": "step_connect",
+      "type": "EVM_WALLET_CONNECT",
+      "label": "Connect a wallet that can reach Arc Testnet",
+      "credentialType": "wallet_address"
+    },
+    {
+      "id": "step_stake",
+      "type": "EVM_TX_EVENT",
+      "label": "Stake ≥ 1 USDC on the ArcMind ETH/USDC market",
+      "contract": "0xaef1bac4a9660bABCc78304580E1ea67749f0351",
+      "event": "Staked(address indexed staker, uint256 amount)",
+      "filter": {
+        "minAmount": "1000000",
+        "staker": "{{wallet_address}}"
+      },
+      "lookbackBlocks": 200000
+    },
+    {
+      "id": "step_record",
+      "type": "API_CALL",
+      "label": "Confirm decision was recorded on-chain",
+      "url": "https://agora.thecanteenapp.com/api/arc-decisions?staker={{wallet_address}}",
+      "method": "GET",
+      "successCondition": {
+        "jsonPath": "$.decisions[0].txHash",
+        "matches": "^0x[a-fA-F0-9]{64}$"
+      }
+    }
+  ],
+  "rewards": [
+    {
+      "rewardId": "arcmind_first_mover_oat",
+      "type": "OAT",
+      "name": "ArcMind First Mover",
+      "description": "Awarded to the first 1,000 users who staked into ArcMind during Agora Agents hackathon week (May 17–25 2026).",
+      "image": "https://agora.thecanteenapp.com/img/galxe-arcmind-first-mover.png",
+      "soulbound": true,
+      "cap": 1000
+    }
+  ],
+  "schedule": {
+    "startsAt": "2026-05-17T00:00:00Z",
+    "endsAt": "2026-05-31T23:59:59Z"
+  },
+  "notes": [
+    "Galxe team must mirror these step IDs into their dashboard. Filter on the Staked event must enforce minAmount=1000000 (1 USDC, 6 decimals).",
+    "step_record is optional; primary completion comes from step_stake on-chain proof. Adding the API check ensures the receipt was indexed before the OAT is granted.",
+    "No private user data is collected — only the wallet address that signed the stake."
+  ]
+}
