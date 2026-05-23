@@ -1,0 +1,25 @@
+{
+  "network": "arcTestnet",
+  "chainId": 5042002,
+  "address": "0xbe64545c3753D613dC91c8695DE6bD67ec9390a6",
+  "deployer": "0x82736f84Ad234566180F902237e2Fb4c35177bDB",
+  "admin": "0x82736f84Ad234566180F902237e2Fb4c35177bDB",
+  "deployedAt": "2026-05-23T22:26:41.652Z",
+  "seededQuestions": [
+    {
+      "slug": "fed-rate-cut-jun-2026",
+      "id": "0x6aeb2111daa0ce231fe50688fbb46d50d6116a2819a79ce991ea4996662051c5",
+      "txHash": "0xbe04d49cb7280bbca23d3fed272e7bb5cb6612bbe3fbc8e388546785e374d19c"
+    },
+    {
+      "slug": "eth-above-5000-eoy-2026",
+      "id": "0xff1b0b28e704e35eb8e2a00fd3fb92e5dc7c236415992bc992b38af7523b2816",
+      "txHash": "0x14f9a0a2ccbfeea75b00444bafcc0b8f0ddb50ac18d06bf3ead8e6d0898f29a5"
+    },
+    {
+      "slug": "btc-spot-etf-flows-positive-q2-2026",
+      "id": "0x4145a594b6332a380a99b735f623158144cf45fe8123ca7e47f300df4667b6d3",
+      "txHash": "0xa113be7c64261fc8c213bd420933e82489e264868001c3a26207a8e997fac248"
+    }
+  ]
+}
