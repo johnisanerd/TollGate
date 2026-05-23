@@ -1,271 +1,437 @@
-# TollGate
+# ArcMind Control Layer
 
-## Agora Agents Hackathon: ArcMind CopyGuard
+**Safe delegation for AI market agents on Arc.**
 
-ArcMind CopyGuard is the Agora/Arc submission inside this repo. It is an AI risk layer for copy-traders: it detects leader strategy decay, decides whether to COPY, REDUCE, STOP, HOLD_USDC, or MOVE_TO_USYC, and exposes paid reasoning traces plus protected USDC portfolio receipts on Arc.
+[![Live App](https://img.shields.io/badge/live-toll--gatee.vercel.app-16c784?style=for-the-badge)](https://toll-gatee.vercel.app/)
+[![Backend](https://img.shields.io/badge/backend-render-4f7cff?style=for-the-badge)](https://tollgate-1.onrender.com)
+[![Arc](https://img.shields.io/badge/network-Arc_Testnet-111827?style=for-the-badge)](https://www.arc.network/)
+[![Agora Agents](https://img.shields.io/badge/submission-Agora_Agents-ffb000?style=for-the-badge)](https://agora.thecanteenapp.com/)
 
-**Primary demo route:** `/live`  
-**Full Agora console:** `/app/agora`  
-**Readiness endpoint:** `/api/arc-readiness`  
-**Main RFB fit:** RFB 06 Social Trading Intelligence  
-**Secondary fit:** RFB 04 Adaptive Portfolio Manager, RFB 02 Trader Intelligence
+ArcMind Control Layer lets a user give an AI market agent a limited USDC operating budget, approved data sources, allowed actions and risk rules. The agent can read market data, build decisions and execute only inside those constraints. User capital stays in a separate strategy vault, and every action leaves an auditable receipt.
 
-For judges:
+The product is built for the **Agora Agents Hackathon by Canteen, Circle and Arc**: agents that trade, invest, create and interface with markets, settled instantly on Arc with USDC.
 
-1. Open `/live`.
-2. Keep `Read-only walkthrough` active for first inspection.
-3. Open `Judge Walkthrough`.
-4. Check `Submission Readiness`.
-5. Inspect latest CopyGuard decision, leader decay factors, paid trace preview, Decision Replay, What-If Simulator, and Live Traction.
-6. Check Signal Source Radar to see which market/social/news providers are configured, need keys, or are intentionally blocked.
-7. Switch to `Live execution` only when ready to connect an Arc wallet and create verified payment receipts.
+## Why This Exists
 
-Agora-specific docs:
+AI trading products usually answer one narrow question: **what should I trade?**
 
-- [Submission pack](docs/AGORA-SUBMISSION-PACK.md)
-- [Live demo runbook](docs/AGORA-LIVE-DEMO-RUNBOOK.md)
-- [Production deployment checklist](docs/AGORA-PRODUCTION-DEPLOYMENT.md)
-- [API signal radar](docs/AGORA-API-SIGNAL-RADAR.md)
-- [Active execution plan](docs/AGORA-ACTIVE-EXECUTION-PLAN.md)
+The hard product problem is different:
 
-Agora local run:
+- Where does the agent get money for paid APIs and market actions?
+- How much can it spend per call or per day?
+- Which sources are trustworthy enough to influence capital?
+- What happens if a source fails, a payment fails, or risk spikes?
+- Can the user stop, withdraw or audit the agent without giving it a whole wallet?
 
-```bash
-npm install
-cd server && npm install && npm run dev
-cd .. && npm run dev
+ArcMind solves that control problem.
+
+> The user does not give the agent a wallet. The user gives the agent a bounded budget, policy, risk guard and strategy vault.
+
+## Product In One Flow
+
+```mermaid
+flowchart LR
+  A["Connect wallet"] --> B["Fund Agent Budget"]
+  B --> C["Allow data sources"]
+  C --> D["Enable strategy"]
+  D --> E["Agent builds decision"]
+  E --> F{"Budget + policy + risk gates"}
+  F -- pass --> G["Approve or auto-execute"]
+  F -- block --> H["Blocked receipt + reason"]
+  G --> I["Execution receipt"]
+  I --> J["Positions / withdraw / settle"]
 ```
 
-Agora smoke check:
+## What The User Can Do
 
-```bash
-AGORA_FRONTEND_URL=http://127.0.0.1:5173 AGORA_BACKEND_URL=http://127.0.0.1:8787 npm run test:agora-live
-```
+The Arc workspace was redesigned around the Hyperliquid Vaults UX model in May 2026 — pick an agent, inspect its profile, copy with one click. Seven tabs replace the original twelve developer-facing screens.
 
-Production smoke check:
-
-```bash
-AGORA_FRONTEND_URL=https://<frontend-domain> AGORA_BACKEND_URL=https://<backend-domain> npm run test:agora-live
-```
-
-Honest demo boundary: read-only walkthrough never creates local fake receipts. Paid trace unlocks and protected portfolio starts require wallet payment plus backend Arc verification.
-
----
-
-> **The payment rails the agent economy runs on.** HTTP 402 for autonomous payments + AgentScore credit reputation, bound to ERC-8004 identity. 18 contracts across 5 chains.
-
-**[Live demo](https://toll-gatee.vercel.app/)** · **[API server](https://tollgate-1.onrender.com)** · **[0G Galileo testnet contract](https://chainscan-galileo.0g.ai/address/0x801ddc5a54E5a7F1d0D6900AA996A04E26D0307f)** · **[GitHub](https://github.com/kravadk/TollGate)**
-
-Turn any API, data feed, inference job, or storage write into a **paid AI-agent service** using HTTP `402 Payment Required`, stablecoin settlement, on-chain agent budgets, and verifiable receipts — no accounts, no API keys, no human approval loop.
-
----
-
-## The problem
-
-AI agents will execute over $10 trillion in autonomous economic decisions by 2030. Today they have zero native payment infrastructure: no service discovery, no per-request billing, no spending limits, no proof of delivery, no credit history. Every agent still relies on human-in-the-loop approval to pay an API.
-
-HTTP `402 Payment Required` was reserved in the HTTP spec for exactly this case in 1997. TollGate makes it real for the agentic era — fully on-chain, replay-safe, and chain-agnostic.
-
-## The solution
-
-A single gateway that agents talk to over standard HTTP. The gateway issues a payment challenge, the agent settles USDC on-chain, and the response unlocks. Every call produces a cryptographic receipt anchored to a blockchain, an on-chain audit trail in `AgentReceiptRegistry`, and an ERC-721 NFT. Agents accumulate an on-chain credit score (`AgentCreditRegistry`) from their receipt history — just like a FICO score, but for AI.
-
-## Key features
-
-| Feature | Description |
-|---|---|
-| **x402 payment gateway** | HTTP 402 challenges: single-use, replay-safe, SHA-256 request-hash bound, 5-min expiry |
-| **Multi-chain** | 0G · Mantle · Arbitrum · Base · QIE · Sui · Polygon — one unified gateway |
-| **On-chain budget enforcement** | `AgentBudgetController`: smart-contract daily caps + per-request limits |
-| **Agent credit score** | `AgentCreditRegistry`: FICO-style score built from on-chain receipt history |
-| **Receipt NFTs** | ERC-721 minted per payment, live in Economy Dashboard via SSE |
-| **MCP server (9 tools)** | Claude Desktop agents call TollGate natively — `pay_for_service`, `list_services`, etc. |
-| **A2A auto-cycle** | Agents hire each other autonomously every 5 s; decision logs anchored on-chain |
-| **SQLite receipt ledger** | Receipts survive server restarts; queryable at `GET /api/receipts` |
-
-## How x402 works
-
-```
-Agent → GET /api/gateway/svc_0g_inference
-      ← 402 { challengeId, payTo, amount, network, requestHash, expiresAt }
-      → pays USDC on-chain
-      → retries with X-PAYMENT: <base64 proof>
-      ← Gateway verifies: recipient · amount · network · challenge binding · replay check
-      ← { data, receiptId } + SQLite write + SSE event + NFT mint
-```
-
-## Architecture
-
-| Component | Path | Description |
+| Tab | User question | Main actions |
 |---|---|---|
-| **Frontend** | `src/` | React 19 + Vite 7 + Tailwind v4. Workspace selector → per-workspace dashboard with live Economy Dashboard (SSE), paid-API tabs, Agents panel, and Receipts ledger. |
-| **Server** | `server/` | Express + TypeScript. Real `402` gateway middleware, SQLite receipt ledger, SSE payment feed, and an MCP server exposing 9 tools so Claude Desktop agents call TollGate natively. |
-| **Contracts** | `contracts/` | 18 Hardhat-deployed Solidity contracts across 0G, Mantle, Arbitrum, QIE, and Arc. |
-| **SDK** | `packages/sdk/` | `@tollgate/sdk` — zero-dependency x402 client: `fetchPaid()` + `createTollGate()`. |
+| **Discover** | What agents can I copy? | Leaderboard: ArcMind (Arc, native) + every Hyperliquid vault from `vaultSummaries`. Sort/filter by APR / AUM / MDD / followers / age. Cross-chain Mirror button per Hyperliquid row (CCTP intent) |
+| **Agent: ArcMind** | What is ArcMind doing and why? | Portfolio sparkline, win rate, Sharpe, 30d return, traded assets, fee schedule, source contribution per decision, followers count, ArcScan link for every on-chain action |
+| **Copy & Position** | How do I copy with $X USDC? | Stake (min $1), risk profile, max drawdown, advanced Binance/Bybit-style settings (TP / SL / max position / slippage / copy mode), live realized + unrealized PnL split |
+| **Receipts** | What proof exists? | Filter, export CSV, copy receipt id; embedded ERC-8183 Job lifecycle viewer (Open → Funded → Submitted → Terminal) with per-state ArcScan tx links |
+| **Developer Console** | How do builders integrate this? | 13 collapsible power-user sections: Agent Budget, Strategies, Sources, Decision Room, Execution Queue, Risk Guard, Positions, Control Receipts, Portfolio, App Kit, x402, CCTP, Circle Tools |
+| **Docs** | API reference | Full Docs portal |
+| **Integrations** | Which chains/keys do I need? | Live integration grid |
 
-## Workspaces
+## Why It Fits Agora
 
-Each workspace is a self-contained deployment with its own contracts, paid API services, UI tabs, and network configuration.
+Primary fit:
 
-| Workspace | Route | Networks | What it does |
-|---|---|---|---|
-| **0G** | `/app/0g` | 0G Galileo Testnet | AI inference + decentralised storage economy; A2A agent loop; MCP server |
-| **Mantle** | `/app/mantle` | Mantle Mainnet | Agent wallets with on-chain spend policies; mETH/USDY yield signals; agent credit scoring |
-| **Arbitrum** | `/app/arbitrum` | Arbitrum Sepolia · One | USDC per-call services with escrowed delivery; Orbit chain monitoring |
-| **QIE** | `/app/qie` | QIE Testnet | Merchant checkout rail; QIE Pass NFT gating; on-chain oracle feed |
-| **Sui** | `/app/sui` | Sui Mainnet · Testnet | Agent Economy OS: DeepBook yield escrow, Walrus receipts, Seal encryption, Intent Engine |
-| **Agora** | `/app/agora` | Arc Mainnet · Base | ArcMind autonomous trading: copy-trading, reasoning traces, kill switch |
-| **Polygon** | `/app/polygon` | Polygon zkEVM | UAE commerce: AED invoice tokenisation, cross-border stablecoin remittance |
+- **RFB 06 - Social Trading Intelligence**: AI does not blindly copy leaders. It weights sources, checks risk decay and decides COPY, HOLD, REDUCE, STOP or MOVE_TO_USDC.
 
-## Deployed contracts
+Secondary fit:
 
-### 0G Galileo Testnet — chainId 16602
+- **RFB 01 - Perpetual Futures Trading Agent**: risk guard, drawdown rules, stale-source blocking and emergency exit logic.
+- **RFB 02 - Prediction Market Trader Intelligence**: source-weighted decision room and paid reasoning proofs.
+- **RFB 04 - Adaptive Portfolio Manager**: strategy vault, risk-off routing and rebalancing controls.
+- **RFB 05 - Cross-Platform Arbitrage Agent**: Arb Watcher can detect routes, but execution is gated by budget and policy.
 
-| Contract | Address |
-|---|---|
-| `AgentReceiptRegistry` | [`0x801ddc5a54E5a7F1d0D6900AA996A04E26D0307f`](https://chainscan-galileo.0g.ai/address/0x801ddc5a54E5a7F1d0D6900AA996A04E26D0307f) |
-| `AgentIdentityRegistry` | [`0x8769E9ad02728d49D08CE2F5D5cd4ce75EeC0446`](https://chainscan-galileo.0g.ai/address/0x8769E9ad02728d49D08CE2F5D5cd4ce75EeC0446) |
-| `ServiceRegistry` | [`0x2b27425bd22Ae883dEc34F7a8Eacacf336C562b8`](https://chainscan-galileo.0g.ai/address/0x2b27425bd22Ae883dEc34F7a8Eacacf336C562b8) |
-| `AgentBudgetController` | [`0x305eF265BD964fBe34913E70Ef6AA8951e6b662e`](https://chainscan-galileo.0g.ai/address/0x305eF265BD964fBe34913E70Ef6AA8951e6b662e) |
-| `DeliveryVerifier` | [`0x5F4999829D57f714497343f5677e66e6A56238E3`](https://chainscan-galileo.0g.ai/address/0x5F4999829D57f714497343f5677e66e6A56238E3) |
+## Funding Model
 
-### Mantle Mainnet — chainId 5000
+ArcMind separates money into four buckets.
 
-| Contract | Address |
-|---|---|
-| `AgentIdentityRegistry` | [`0x4cA80A3af6e0a4E0c85AB31E3B4a86C6BffF17CB`](https://explorer.mantle.xyz/address/0x4cA80A3af6e0a4E0c85AB31E3B4a86C6BffF17CB) |
-| `AgentCreditRegistry` | [`0xA8FdDb9F6f54Fbf127cb8c71049cB1e19f5836F9`](https://explorer.mantle.xyz/address/0xA8FdDb9F6f54Fbf127cb8c71049cB1e19f5836F9) |
-| `AgentVault` | [`0x801ddc5a54E5a7F1d0D6900AA996A04E26D0307f`](https://explorer.mantle.xyz/address/0x801ddc5a54E5a7F1d0D6900AA996A04E26D0307f) |
-| `AgentBudgetController` | [`0x2b27425bd22Ae883dEc34F7a8Eacacf336C562b8`](https://explorer.mantle.xyz/address/0x2b27425bd22Ae883dEc34F7a8Eacacf336C562b8) |
-| `ReceiptNFT` | [`0x5F4999829D57f714497343f5677e66e6A56238E3`](https://explorer.mantle.xyz/address/0x5F4999829D57f714497343f5677e66e6A56238E3) |
+| Bucket | Pays for | Does not pay for |
+|---|---|---|
+| **User Wallet** | Manual signatures, top-up, withdrawals, user-approved actions | Hidden autonomous retries |
+| **Agent Budget** | Autonomous source reads, x402 calls, arb checks, agent operating costs | User strategy stake |
+| **Strategy Vault** | User capital, exposure, reduce/close/settle/withdraw | Paid data sources |
+| **Receipts Layer** | Audit trail for live, blocked and failed actions | Custody |
 
-### Arbitrum Sepolia — chainId 421614
+New Agora actions are **live-only**:
 
-| Contract | Address |
-|---|---|
-| `AgentEscrow` | [`0x801ddc5a54E5a7F1d0D6900AA996A04E26D0307f`](https://sepolia.arbiscan.io/address/0x801ddc5a54E5a7F1d0D6900AA996A04E26D0307f) |
+- no local fallback receipts for new actions;
+- no seed BUY/HOLD/SELL data;
+- no fake PnL, fake volume or simulated custody;
+- if a live path is unavailable, the action is blocked with a concrete reason.
 
-### QIE Testnet — chainId 1983
+## Auto-Generated Markets (MarketFactory)
 
-| Contract | Address |
-|---|---|
-| `QieCheckout` | [`0x801ddc5a54E5a7F1d0D6900AA996A04E26D0307f`](https://testnet.qie.digital/address/0x801ddc5a54E5a7F1d0D6900AA996A04E26D0307f) |
-| `QiePass` | [`0x8769E9ad02728d49D08CE2F5D5cd4ce75EeC0446`](https://testnet.qie.digital/address/0x8769E9ad02728d49D08CE2F5D5cd4ce75EeC0446) |
-
-### Arc Testnet — chainId 5042002
-
-| Contract | Address |
-|---|---|
-| `ArcMindRegistry` | [`0x24Cb6d1bE131006e8CB2cb7fBa5675725f9E6Da8`](https://testnet.arcscan.app/address/0x24Cb6d1bE131006e8CB2cb7fBa5675725f9E6Da8) |
-
-## Quick start
+ArcMind ships a production `MarketFactory` so any new `(operator, baseSymbol, quoteToken)` triple can spawn its own isolated `CopyTradeMarket` contract. Every market is a separate Solidity contract with its own pause switch, fee schedule, stake bounds, and per-trader state — risk on one market never crosses into another.
 
 ```bash
-# Frontend
-npm install
-npm run dev          # Vite on :5173
-
-# Server
-cd server
-npm install
-cp .env.example .env   # fill in keys
-npm run dev          # Express on :8787
+cd contracts
+ARC_USDC_ADDRESS=0x... ARC_PRIVATE_KEY=0x... npm run deploy:arc-market-factory
 ```
 
-## API reference
+Deploys `AgentRegistry` + `MarketFactory` + the canonical ETH/USDC market, writes `contracts/deployments/arc-market-factory.json`. Adding a second market (e.g. BTC/USDC) is a single call:
 
-```
-GET  /api/services              list all paid services (?workspace=0g)
-GET  /api/services/:id          service details
-GET  /api/agents                list agents (?workspace=)
-GET  /api/agents/:id            agent details
-GET  /api/v1/x402-spec          x402 discovery document
-GET  /api/gateway/:serviceId    → 402 challenge or unlocked response
-POST /api/gateway/:serviceId    same, for POST payloads
-GET  /api/receipts              receipt ledger (?workspace=&service=&agent=)
-GET  /api/receipts/:id          single receipt
-GET  /api/receipts/stats        economy stats (total, today, agents, avg)
-GET  /api/agent-score/:agentId  FICO-style credit score from receipt history
-GET  /api/events/payments       SSE: live payment feed (snapshot + receipt + nft_update)
-POST /api/og/upload             0G Storage upload (server-signed)
-POST /api/og/compute            0G Compute inference (server-signed)
-GET  /api/status/health         server health + version
-GET  /api/status/activity       activity snapshot
-POST /mcp                       MCP server (JSON-RPC 2.0, 9 tools)
+```ts
+await factory.createMarket(
+  operator, usdc,
+  "BTC/USDC",
+  500,   // 5% performance fee (capped at 20%)
+  1500,  // 15% kill-switch drawdown (range 5%-50%)
+  1_000_000n,   // $1 USDC min stake
+  1_000_000_000n,  // $1,000 USDC max stake
+);
 ```
 
-## SDK
+Security primitives across every new contract (OpenZeppelin 5.0.2):
 
-```typescript
-import { fetchPaid, createTollGate } from "@tollgate/sdk";
+- `Ownable` + `Pausable` + `ReentrancyGuard` + `SafeERC20`
+- CEI (checks-effects-interactions) on every external transfer
+- Per-parameter validation in constructor AND per-call (defence in depth)
+- Custom errors with structured args (no string reverts)
+- No `delegatecall`, no proxy, no upgradeability
+- `sweepDust()` cannot drain quote token — user capital is segregated
+- Factory enforces a global policy bound (max performance fee, kill-threshold range, stake floor/ceiling) on top of each market's own immutable bounds
 
-const data = await fetchPaid("https://tollgate-1.onrender.com/api/gateway/svc_0g_inference", {
-  proof: async (challenge) => myWallet.signAndPay(challenge),
-  agentId: "my-agent",
+The frontend Discover tab auto-discovers every market on every page load — set `VITE_ARC_MARKET_FACTORY` in your env and the "Native Arc Markets" section appears with live TVL, fees paid, settlement count, and pause state per market.
+
+## Live Architecture
+
+```mermaid
+flowchart TB
+  U["User wallet"] --> UI["React dApp"]
+  UI --> API["Arc Control API"]
+  API --> DB["SQLite control state"]
+  API --> SRC["Live source adapters"]
+  UI --> ARC["Arc Testnet contracts"]
+  ARC --> T["ArcAgentTreasury"]
+  ARC --> V["ArcStrategyVault"]
+  ARC --> R["ArcRiskGuard"]
+  ARC --> RR["ArcReceiptRegistry"]
+  SRC --> M["Market price / OI / funding"]
+  SRC --> S["Social + news via Apify"]
+  SRC --> L["Leader feed if configured"]
+```
+
+### Standards
+
+- **ERC-8004** (Agent Identity & Reputation) — `AgentRegistry.sol` exposes `agentURI`, `agentReputation`, `agentOwner`, `agentDecisionCount` + emits standard `ReputationUpdated` events. Resolvers have a dedicated role; governors can slash misbehaving agents.
+- **ERC-8183** (Agentic Commerce, Virtuals × Ethereum Foundation) — every copy-trade position emits `JobCreated → JobFunded → JobSubmitted → JobCompleted` events from `CopyTradeMarket`. The Receipts tab includes a live Job-lifecycle viewer.
+- **Hyperliquid Info API** — POST `https://api.hyperliquid.xyz/info` with `vaultSummaries` / `vaultDetails` / `leaderboard`. Cached 60s in-memory; empty array on failure, never synthetic.
+- **Circle CCTP v2** — domain numbers and USDC addresses for Ethereum/Arbitrum/Base/Optimism/Polygon are exposed via the Mirror modal; intents persist as receipts and will be replayable once Arc L1 is added to CCTP.
+- **x402 USDC nanopayments** — agent operating costs settle in USDC per-call via `packages/sdk` (zero-dep client).
+
+### `@arcmind/agent` package
+
+The standalone autonomous agent runtime lives at `packages/arcmind-agent/`. Architecture matches ElizaOS plugin shape (Character + Providers + Actions + Evaluators + Service) with a local TypeScript shim of the public `@elizaos/core` types — drop in `@elizaos/core` later by changing one `types.ts` import, no business-logic rewrites needed.
+
+Providers: `coingeckoPriceProvider`, `hyperliquidOiProvider`, `leaderFeedProvider`.
+Actions: `decideEthDirectionAction`, `recordOnChainAction`.
+Evaluator: `decisionAccuracyEvaluator` (feeds ERC-8004 reputation).
+
+```ts
+import { startArcMindAgent } from "@arcmind/agent";
+const stop = await startArcMindAgent({
+  settings: { ARC_PRIVATE_KEY: "0x…", ARC_AGENT_ID: "0x…" },
 });
 ```
 
-## MCP server (Claude Desktop)
+### Frontend
 
-Add to `claude_desktop_config.json`:
-```json
-{
-  "mcpServers": {
-    "tollgate": {
-      "command": "npx",
-      "args": ["-y", "@tollgate/mcp-bridge", "--url", "https://tollgate-1.onrender.com/mcp"]
-    }
-  }
-}
+- React 19
+- Vite 7
+- TypeScript
+- Tailwind CSS
+- Workspace route: `/app/agora`
+
+### Backend
+
+- Express + TypeScript
+- `better-sqlite3` control-state persistence
+- x402-style service gateway
+- Arc Control API
+- live source adapters
+
+### Contracts
+
+**Production contract suite** (deploy via `cd contracts && npm run deploy:arc-market-factory`):
+
+| Contract | Role | Source |
+|---|---|---|
+| `MarketFactory` | Permissionless factory — deploys one `CopyTradeMarket` per `(operator, baseSymbol, quoteToken)`; owner-configurable policy bounds | [`contracts/contracts/MarketFactory.sol`](contracts/contracts/MarketFactory.sol) |
+| `CopyTradeMarket` | Per-market escrow: stake/settle/killSwitch/pause; immutable fee + drawdown bounds; ERC-8183 Job lifecycle events | [`contracts/contracts/CopyTradeMarket.sol`](contracts/contracts/CopyTradeMarket.sol) |
+| `AgentRegistry` | Multi-agent registry with `AccessControl` (resolver + governor roles), slashing, ERC-8004 view interface | [`contracts/contracts/AgentRegistry.sol`](contracts/contracts/AgentRegistry.sol) |
+
+**Legacy Arc Testnet deployment** (still live for the original 12-tab demo flow):
+
+| Contract | Address |
+|---|---|
+| `ArcAgentTreasury` | [`0x4Cf79c89cFd85F788f6A0d8A27e0552902622869`](https://testnet.arcscan.app/address/0x4Cf79c89cFd85F788f6A0d8A27e0552902622869) |
+| `ArcStrategyVault` | [`0xdBB4b61fC5Cbc2A456d56aFfF79a27e5155106d0`](https://testnet.arcscan.app/address/0xdBB4b61fC5Cbc2A456d56aFfF79a27e5155106d0) |
+| `ArcRiskGuard` | [`0x0F066C8280E67F88B1c7959595E229541aFc531c`](https://testnet.arcscan.app/address/0x0F066C8280E67F88B1c7959595E229541aFc531c) |
+| `ArcReceiptRegistry` | [`0xB5F9Ca1350c3EDA3FB2f0C0b7398C88BA2310693`](https://testnet.arcscan.app/address/0xB5F9Ca1350c3EDA3FB2f0C0b7398C88BA2310693) |
+| `ArcMindRegistry` (ERC-8004 shim) | [`0xF4BFd93061B160Fa376c7F66De207a00225B4e70`](https://testnet.arcscan.app/address/0xF4BFd93061B160Fa376c7F66De207a00225B4e70) |
+| `CopyTradeEscrow` (ERC-8183 events) | [`0x24Cb6d1bE131006e8CB2cb7fBa5675725f9E6Da8`](https://testnet.arcscan.app/address/0x24Cb6d1bE131006e8CB2cb7fBa5675725f9E6Da8) |
+
+## Control API
+
+Product-level routes:
+
+```txt
+GET  /api/arc/control/status
+GET  /api/arc/control/budget
+POST /api/arc/control/budget/top-up
+POST /api/arc/control/budget/withdraw
+POST /api/arc/control/policy
+
+GET  /api/arc/control/sources
+POST /api/arc/control/sources/refresh
+POST /api/arc/control/sources/allow
+POST /api/arc/control/sources/block
+
+GET  /api/arc/control/strategies
+POST /api/arc/control/strategies/enable
+POST /api/arc/control/strategies/disable
+POST /api/arc/control/strategies/run-once
+
+GET  /api/arc/control/decision/latest
+POST /api/arc/control/decision/build
+POST /api/arc/control/decision/approve
+POST /api/arc/control/decision/reject
+
+GET  /api/arc/control/execution
+POST /api/arc/control/execution/cancel
+POST /api/arc/control/execution/retry
+
+GET  /api/arc/control/positions
+POST /api/arc/control/positions/open
+POST /api/arc/control/positions/reduce
+POST /api/arc/control/positions/close
+POST /api/arc/control/positions/settle
+POST /api/arc/control/positions/withdraw
+
+POST /api/arc/control/risk/exit
+POST /api/arc/control/risk/arm
+POST /api/arc/control/risk/disarm
+POST /api/arc/control/risk/reset
+
+GET  /api/arc/control/receipts
+GET  /api/arc/control/developer/status
 ```
 
-Claude can then call `list_services`, `pay_for_service`, `get_receipt`, and 6 more tools natively.
+Write routes return a single result shape:
 
-## Tech stack
+```ts
+type ControlWriteResult = {
+  ok: boolean;
+  status: "live" | "blocked" | "failed";
+  reason?: string;
+  txHash?: string;
+  receiptId?: string;
+  state?: ControlState;
+};
+```
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 19, Vite 7, Tailwind CSS v4, TypeScript |
-| Server | Node.js, Express, TypeScript, better-sqlite3, ethers v6 |
-| Contracts | Solidity 0.8, Hardhat, OpenZeppelin |
-| Payments | HTTP 402 (x402 protocol), USDC ERC-20, ERC-721 NFT receipts |
-| Storage | 0G Storage (Merkle-root anchored), Walrus (Sui) |
-| Identity | ERC-8004 agent identity, EIP-191 signatures |
-| MCP | JSON-RPC 2.0 MCP server, Claude Desktop integration |
-| Chains | 0G · Mantle · Arbitrum · Base · QIE · Sui · Polygon zkEVM · Arc |
+## Source Layer
 
-## Security
+ArcMind never invents live data.
 
-TollGate handles real on-chain payments.
+| Source group | Live source | Behavior when unavailable |
+|---|---|---|
+| Market price | Binance, Coinbase, Hyperliquid public APIs | Source marked unavailable; paid action can be blocked |
+| OI / funding | Hyperliquid public API | Source marked unavailable or stale |
+| Social / news | Apify-backed public source layer | `needs_key` if token is missing |
+| Leader feed | `ARC_LEADER_FEED_URL` with sourced JSON | CopyGuard unavailable; SignalGuard mode remains |
+| Developer paid sources | x402 service catalog | Hidden in Developer unless configured |
 
-**Server hardening:**
-- HTTP security headers (`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`) on every response. Mirrored in `vercel.json`.
-- Rate limiting: `/api/og/upload` 10 req/min, `/api/gateway/:id` 30 req/min/IP, `/mcp` 60 req/min.
-- `X-Agent-Id` truncated to 128 printable-ASCII chars to prevent log injection.
-- `X-Request-Id` validated against `[a-zA-Z0-9_-]{1,64}`.
-- x402 challenges are single-use, expire in 5 minutes, and are bound to a SHA-256 request hash.
-- 500 responses return `{ error: "internal_error" }` only — no stack traces.
-- Model inference endpoint has an allowlist — unknown model IDs return 400.
+## Local Development
 
-**Frontend hardening:**
-- All user-entered amounts pass through `safeAmt()` — NaN, negative, and overflow values rejected before any on-chain call.
-- Tx hash links rendered only after `isTxHash()` validates the 64-char hex — prevents open-redirect.
-- Ethereum addresses validated with `/^0x[0-9a-fA-F]{40}$/` before any transaction.
-
-**Known limitations:**
-- `CORS_ORIGIN=*` by default; tighten to your domain before production.
-- MCP `create_service` accepts arbitrary endpoint URLs — add an SSRF blocklist before public deployment.
-
-Full security policy: [SECURITY.md](SECURITY.md)
-
-## Testing
+Install dependencies:
 
 ```bash
-# Unit tests
-npm test
-
-# Integration / flow test (requires server running on :8787)
-node scripts/test-flow.js
+npm install
+cd server
+npm install
 ```
 
-The flow test exercises the full x402 cycle: service discovery → 402 challenge → dev-bypass payment → receipt verification → agent credit score. All credentials are loaded from `server/.env`.
+Run backend:
+
+```bash
+cd server
+npm run dev
+```
+
+Run frontend:
+
+```bash
+npm run dev
+```
+
+Recommended local ports:
+
+```bash
+# backend
+PORT=8787 npm run dev
+
+# frontend
+VITE_SERVER_URL=http://127.0.0.1:8787 VITE_API_BASE=http://127.0.0.1:8787 npm run dev
+```
+
+## Required Environment
+
+Backend:
+
+```txt
+NODE_ENV=production
+PORT=8787
+CORS_ORIGIN=https://toll-gatee.vercel.app
+X402_NETWORK=arc-testnet
+X402_ASSET=USDC
+X402_PAYOUT_ADDRESS=<Arc payout wallet>
+ARC_RPC_URL=<Arc RPC URL>
+ARC_PRIVATE_KEY=<dedicated funded Arc signer>
+ARC_AGENT_ID=<agent id>
+ARC_SIGNAL_SOURCE_MODE=live
+APIFY_TOKEN=<optional social/news source layer>
+TELEGRAM_BOT_TOKEN=<optional alerts>
+TELEGRAM_CHAT_ID=<optional alerts>
+OPENAI_API_KEY=<optional reasoning UX>
+PINATA_JWT=<optional trace artifact storage>
+```
+
+Frontend:
+
+```txt
+VITE_SERVER_URL=https://tollgate-1.onrender.com
+VITE_API_BASE=https://tollgate-1.onrender.com
+VITE_ARC_AGENT_TREASURY_ADDRESS=0x4Cf79c89cFd85F788f6A0d8A27e0552902622869
+VITE_ARC_STRATEGY_VAULT_ADDRESS=0xdBB4b61fC5Cbc2A456d56aFfF79a27e5155106d0
+VITE_ARC_RISK_GUARD_ADDRESS=0x0F066C8280E67F88B1c7959595E229541aFc531c
+VITE_ARC_RECEIPT_REGISTRY_ADDRESS=0xB5F9Ca1350c3EDA3FB2f0C0b7398C88BA2310693
+VITE_ARC_MARKET_FACTORY=<MarketFactory address (enables on-chain market discovery)>
+VITE_ARC_AGENT_REGISTRY=<AgentRegistry address>
+VITE_ARC_RPC_URL=<Arc public RPC URL>
+VITE_ARC_EXPLORER=https://testnet.arcscan.app
+VITE_POSTHOG_KEY=<optional traction analytics>
+VITE_POSTHOG_HOST=https://app.posthog.com
+```
+
+## Verification
+
+```bash
+# Frontend (96 tests)
+npm test
+npx tsc --noEmit
+npm run build
+
+# Contracts (34 tests including market factory + ERC-8004/8183 lifecycle)
+cd contracts && npx hardhat test
+cd contracts && npx hardhat compile
+
+# Standalone agent package
+cd packages/arcmind-agent && npx tsc --noEmit
+
+# Server
+cd server && npm test
+cd server && npm run typecheck
+```
+
+Production smoke:
+
+```bash
+AGORA_FRONTEND_URL=https://toll-gatee.vercel.app \
+AGORA_BACKEND_URL=https://tollgate-1.onrender.com \
+npm run test:agora-live
+```
+
+## Security And Product Boundaries
+
+- Agent Budget and Strategy Vault are separate.
+- Agent Budget cannot pay user stake.
+- Strategy Vault cannot pay data-source calls.
+- Manual user-money actions require a wallet transaction.
+- Autonomous paid actions require budget, policy and risk gates.
+- Failed or blocked actions do not mutate budget or positions.
+- Receipts show live transaction hashes only for real Arc transactions.
+- Developer tooling is secondary and does not replace the user product flow.
+
+## Repository Map
+
+```txt
+contracts/contracts/
+  MarketFactory.sol               Production factory — auto-generates markets
+  CopyTradeMarket.sol             Per-market escrow with full security primitives
+  AgentRegistry.sol               ERC-8004 + slashing + AccessControl
+  CopyTradeEscrow.sol             Legacy (still emits ERC-8183 events)
+  ArcMindRegistry.sol             Legacy (ERC-8004 shim)
+contracts/scripts/
+  deploy-market-factory.cjs       Deploys factory + initial ETH/USDC market
+contracts/test/
+  market-factory.test.cjs         24 lifecycle + security tests
+  arc-erc-compat.test.cjs         10 ERC-8004/8183 shim tests
+
+packages/arcmind-agent/             ElizaOS-compatible standalone agent
+  src/character.ts                ArcMind character file
+  src/providers/                  CoinGecko, Hyperliquid OI, leader feed
+  src/actions/                    decideEthDirection, recordOnChain
+  src/evaluators/                 decisionAccuracyEvaluator
+  src/service/arcMindService.ts   30-min decision loop
+  src/types.ts                    Local shim of @elizaos/core types
+  README.md                       Migration guide
+
+src/lib/
+  hyperliquid.ts                  Hyperliquid Info API client (vaults/leaderboard)
+  cctp.ts                         CCTP intent + fee estimator (Mirror flow)
+  marketFactory.ts                Read-only client for the on-chain factory
+  agora.ts                        Arc helpers + ERC-8183 lifecycle reader
+
+src/components/widgets/agora/
+  ArcDiscoverWidget.tsx           Discover tab (native markets + Hyperliquid leaderboard)
+  ArcAgentDetailWidget.tsx        Agent profile page (portfolio sparkline, reasoning)
+  ArcMindOverviewWidget.tsx       ArcMind hero + position card
+  ArcMindAlgorithmProfile.tsx     "Who am I copying?" shared card
+  ArcMindWidgets.tsx              Copy & Position + reasoning trace widgets
+  CrossChainMirrorModal.tsx       CCTP intent flow
+  JobLifecycleViewer.tsx          ERC-8183 Open/Funded/Submitted/Terminal viewer
+  ArcDeveloperConsoleWidget.tsx   13 collapsible power-user sections
+
+src/pages/WorkspacePage.tsx       Agora tab dispatcher
+src/workspaces/agora/             Workspace module
+server/src/                       Express backend (SQLite control state, x402 gateway)
+```
+
+## Links
+
+- Live product: [https://toll-gatee.vercel.app/](https://toll-gatee.vercel.app/)
+- Backend: [https://tollgate-1.onrender.com](https://tollgate-1.onrender.com)
+- GitHub: [https://github.com/kravadk/TollGate](https://github.com/kravadk/TollGate)
+- Agora Agents Hackathon: [https://agora.thecanteenapp.com/](https://agora.thecanteenapp.com/)
+- Arc: [https://www.arc.network/](https://www.arc.network/)
+- Circle Developer Docs: [https://developers.circle.com/](https://developers.circle.com/)
+
