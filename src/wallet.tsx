@@ -485,6 +485,7 @@ export function ConnectWalletButton({
 }) {
   const internal = useWallet();
   const w = wallet ?? internal;
+  const chipNativeSym = nativeSymbolForChain(w.chainId);
 
   if (!w.available) {
     return (
@@ -506,7 +507,7 @@ export function ConnectWalletButton({
         <span className="wallet-chip__dot" />
         <span className="wallet-chip__addr">{shortAddr(w.address)}</span>
         {!compact && w.balanceEth != null && (
-          <span className="wallet-chip__bal">{w.balanceEth} ETH</span>
+          <span className="wallet-chip__bal">{w.balanceEth} {chipNativeSym}</span>
         )}
         {!compact && w.chainId && <span className="wallet-chip__net">{chainLabel(w.chainId)}</span>}
         <button className="wallet-chip__x" type="button" aria-label="Disconnect" onClick={w.disconnect}>
@@ -530,6 +531,7 @@ export function WalletLiveStrip() {
   const [block, setBlock] = useState<number | null>(null);
   const [gasGwei, setGasGwei] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const nativeSym = nativeSymbolForChain(w.chainId);
   const { balances, loading: balLoading, refresh: refreshTokens } = useErc20Balances(w.address, w.chainId);
   const { txs, scanning, scanned, depth, error: txErr, scan } = useRecentTxs(w.address, w.chainId);
   const [feedOpen, setFeedOpen] = useState(false);
@@ -601,7 +603,7 @@ export function WalletLiveStrip() {
         </div>
         <div className="wlive__cell">
           <span className="wlive__cell-k">Native balance</span>
-          <span className="wlive__cell-v">{w.balanceEth != null ? `${w.balanceEth} ETH` : "—"}</span>
+          <span className="wlive__cell-v">{w.balanceEth != null ? `${w.balanceEth} ${nativeSym}` : "—"}</span>
         </div>
         <div className="wlive__cell">
           <span className="wlive__cell-k">Block</span>
@@ -656,7 +658,7 @@ export function WalletLiveStrip() {
                   </span>
                   <span className="wlive__tx-hash wlive__mono">{url ? <a href={url} target="_blank" rel="noreferrer">{t.hash.slice(0, 10)}…{t.hash.slice(-6)}</a> : `${t.hash.slice(0, 10)}…`}</span>
                   <span className="wlive__tx-peer wlive__mono">{t.direction === "in" ? `from ${shortAddr(t.from)}` : t.to ? `to ${shortAddr(t.to)}` : "contract deploy"}</span>
-                  <span className="wlive__tx-val">{t.valueEth} ETH</span>
+                  <span className="wlive__tx-val">{t.valueEth} {nativeSym}</span>
                   <span className="wlive__tx-blk wlive__mono">#{t.blockNumber.toLocaleString()}</span>
                 </div>
               );
