@@ -3,7 +3,6 @@ export { ProofVerifier } from "../../components/widgets/zero-g/ProofVerifier";
 export { StoragePinWidget } from "../../components/widgets/zero-g/StoragePinWidget";
 export { OpenClawSkillConsole, TeeAttestationVerifier, DePinBulkPin } from "../../components/widgets/og-extra/OgExtraWidgets";
 export { OgIntegrationStatus } from "../../components/widgets/og-extra/OgIntegrationStatus";
-export { SealedPayloadVault } from "./inline-widgets";
 
 import type { ReactNode } from "react";
 import type { Service, Workspace } from "../../types";

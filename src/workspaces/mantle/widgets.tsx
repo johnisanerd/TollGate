@@ -2,7 +2,7 @@ export { MantleAgentIdentity, MantleVaultPanel, MantleBudgetPanel } from "../../
 export { StrategyDeployPanel, YieldProjectionCalc, WhaleAlertFeed, CreditScoreMeter, AlphaBotWidget, AgentCreditLine, AgentBudgetDashboard, YieldComparisonWidget, MantleA2ALoopWidget } from "../../components/widgets/mantle-extra/MantleExtraWidgets";
 export { MantleEarnCalc, MantleAgentEconomyDashboard, MantlePortfolioRebalancer, MantleGasOptimizer, AlphaDesk, RwaRegistry, MantleEconomyLoop, YieldBoard, MantleDevToolsPanel } from "./inline-widgets";
 
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import type { ReactNode } from "react";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
@@ -15,8 +15,18 @@ import { DiscoveryWidget } from "../../components/widgets/DiscoveryWidget";
 import { MerchantWidget } from "../../components/widgets/MerchantWidget";
 import { ArrowUpRight, Bell, Database, Robot, Bolt, Receipt as RIco } from "../../icons402";
 import { MantleAgentIdentity, MantleVaultPanel, MantleBudgetPanel } from "../../components/widgets/mantle/MantleOnchain";
-import { StrategyDeployPanel, YieldProjectionCalc, WhaleAlertFeed, CreditScoreMeter, AlphaBotWidget, AgentCreditLine, AgentBudgetDashboard, YieldComparisonWidget, MantleA2ALoopWidget } from "../../components/widgets/mantle-extra/MantleExtraWidgets";
+import { AgentCreditLine } from "../../components/widgets/mantle-extra/MantleExtraWidgets";
 import { MantleEarnCalc, MantleAgentEconomyDashboard, MantlePortfolioRebalancer, MantleGasOptimizer, AlphaDesk, RwaRegistry, MantleEconomyLoop, YieldBoard, MantleDevToolsPanel } from "./inline-widgets";
+
+const _mew = () => import("../../components/widgets/mantle-extra/MantleExtraWidgets");
+const StrategyDeployPanel   = lazy(() => _mew().then((m) => ({ default: m.StrategyDeployPanel })));
+const YieldProjectionCalc   = lazy(() => _mew().then((m) => ({ default: m.YieldProjectionCalc })));
+const WhaleAlertFeed        = lazy(() => _mew().then((m) => ({ default: m.WhaleAlertFeed })));
+const CreditScoreMeter      = lazy(() => _mew().then((m) => ({ default: m.CreditScoreMeter })));
+const AlphaBotWidget        = lazy(() => _mew().then((m) => ({ default: m.AlphaBotWidget })));
+const AgentBudgetDashboard  = lazy(() => _mew().then((m) => ({ default: m.AgentBudgetDashboard })));
+const YieldComparisonWidget = lazy(() => _mew().then((m) => ({ default: m.YieldComparisonWidget })));
+const MantleA2ALoopWidget   = lazy(() => _mew().then((m) => ({ default: m.MantleA2ALoopWidget })));
 
 export const signature: SigBlock = {
   title: "Yield board",
@@ -44,7 +54,7 @@ export function cards({ onGoTab, onOpenPayment: _onOpenPayment, wsReceipts, def:
 
 export function renderTab(t: string, workspace: Workspace, _receipts: Receipt[], _onOpenPayment: (s: Service) => void): ReactNode | null {
   const nodes: ReactNode[] = [];
-  if (t.includes("strateg") || t.includes("sandbox")) nodes.push(<StrategyDeployPanel key="strategy" workspace={workspace} />);
+  if (t.includes("strateg") || t.includes("sandbox")) nodes.push(<Suspense key="strategy" fallback={null}><StrategyDeployPanel workspace={workspace} /></Suspense>);
   if (t.includes("economy")) {
     nodes.push(<div key="economy-treasury" style={{ marginBottom: 14 }}><TreasuryPanel scope={MNT_FUNDING_SCOPE} label="Agent Economy autonomous spend" defaultTopUpUsd={MNT_TREASURY_TOPUP_USD} /></div>);
     nodes.push(<MantleAgentEconomyDashboard key="economy" workspace={workspace} />);
@@ -52,26 +62,26 @@ export function renderTab(t: string, workspace: Workspace, _receipts: Receipt[],
   if (t.includes("alpha")) {
     nodes.push(<div key="alpha-treasury" style={{ marginBottom: 14 }}><TreasuryPanel scope={MNT_FUNDING_SCOPE} label="Alpha & RWA data calls" defaultTopUpUsd={MNT_TREASURY_TOPUP_USD} /></div>);
     nodes.push(<AlphaDesk key="alpha" workspace={workspace} />);
-    nodes.push(<WhaleAlertFeed key="whale" workspace={workspace} />);
-    nodes.push(<AlphaBotWidget key="alphabot" workspace={workspace} />);
+    nodes.push(<Suspense key="whale" fallback={null}><WhaleAlertFeed workspace={workspace} /></Suspense>);
+    nodes.push(<Suspense key="alphabot" fallback={null}><AlphaBotWidget workspace={workspace} /></Suspense>);
   }
   if (t.includes("meth") || t.includes("usdy") || (t.includes("yield") && !t.includes("alpha"))) {
     nodes.push(<MantleEarnCalc key="earncalc" workspace={workspace} />);
     nodes.push(<MantlePortfolioRebalancer key="rebalancer" workspace={workspace} />);
     nodes.push(<YieldBoard key="yieldboard" workspace={workspace} />);
-    nodes.push(<YieldProjectionCalc key="yield" workspace={workspace} />);
+    nodes.push(<Suspense key="yield" fallback={null}><YieldProjectionCalc workspace={workspace} /></Suspense>);
   }
   if (t.includes("rwa")) nodes.push(<RwaRegistry key="rwa" workspace={workspace} />);
   if (t.includes("devtool") || t.includes("dev tool")) {
     nodes.push(<MantleGasOptimizer key="gas" workspace={workspace} />);
     nodes.push(<MantleDevToolsPanel key="devtools" workspace={workspace} />);
   }
-  if (t.includes("credit")) nodes.push(<CreditScoreMeter key="credit" workspace={workspace} />);
-  if (t.includes("budget")) nodes.push(<AgentBudgetDashboard key="budget" workspace={workspace} />);
-  if (t.includes("compare")) nodes.push(<YieldComparisonWidget key="yieldcompare" workspace={workspace} />);
+  if (t.includes("credit")) nodes.push(<Suspense key="credit" fallback={null}><CreditScoreMeter workspace={workspace} /></Suspense>);
+  if (t.includes("budget")) nodes.push(<Suspense key="budget" fallback={null}><AgentBudgetDashboard workspace={workspace} /></Suspense>);
+  if (t.includes("compare")) nodes.push(<Suspense key="yieldcompare" fallback={null}><YieldComparisonWidget workspace={workspace} /></Suspense>);
   if (t.includes("a2a") || t.includes("loop")) {
     nodes.push(<div key="a2a-treasury" style={{ marginBottom: 14 }}><TreasuryPanel scope={MNT_FUNDING_SCOPE} label="A2A loop autonomous spend" defaultTopUpUsd={MNT_TREASURY_TOPUP_USD} /></div>);
-    nodes.push(<MantleA2ALoopWidget key="a2aloop" workspace={workspace} />);
+    nodes.push(<Suspense key="a2aloop" fallback={null}><MantleA2ALoopWidget workspace={workspace} /></Suspense>);
   }
   return nodes.length > 0 ? <>{nodes}</> : null;
 }
@@ -86,25 +96,25 @@ export function renderTabContent(tab: string, ctx: TabCtx): ReactNode {
   if (t.includes("agent") || t.includes("marketplace")) nodes.push(<MerchantWidget key="merchant" />);
   if (t.includes("alpha")) {
     nodes.push(<AlphaDesk key="alpha" workspace={workspace} />);
-    nodes.push(<WhaleAlertFeed key="whale" workspace={workspace} />);
+    nodes.push(<Suspense key="whale" fallback={null}><WhaleAlertFeed workspace={workspace} /></Suspense>);
   }
   if (t.includes("meth") || t.includes("usdy") || (t.includes("yield") && !t.includes("alpha"))) {
     nodes.push(<MantleEarnCalc key="earncalc" workspace={workspace} />);
     nodes.push(<MantlePortfolioRebalancer key="rebalancer" workspace={workspace} />);
     nodes.push(<YieldBoard key="yieldboard" workspace={workspace} />);
-    nodes.push(<YieldProjectionCalc key="yield" workspace={workspace} />);
+    nodes.push(<Suspense key="yield" fallback={null}><YieldProjectionCalc workspace={workspace} /></Suspense>);
   }
-  if (t.includes("strateg") || t.includes("sandbox")) nodes.push(<StrategyDeployPanel key="strategy" workspace={workspace} />);
+  if (t.includes("strateg") || t.includes("sandbox")) nodes.push(<Suspense key="strategy" fallback={null}><StrategyDeployPanel workspace={workspace} /></Suspense>);
   if (t.includes("rwa")) nodes.push(<RwaRegistry key="rwa" workspace={workspace} />);
   if (t.includes("devtool") || t.includes("dev tool")) {
     nodes.push(<MantleGasOptimizer key="gas" workspace={workspace} />);
     nodes.push(<MantleDevToolsPanel key="devtools" workspace={workspace} />);
   }
-  if (t.includes("credit")) nodes.push(<CreditScoreMeter key="credit" workspace={workspace} />);
-  if (t.includes("alpha")) nodes.push(<AlphaBotWidget key="alphabot" workspace={workspace} />);
-  if (t.includes("budget")) nodes.push(<AgentBudgetDashboard key="budget" workspace={workspace} />);
-  if (t.includes("yield") || t.includes("compare")) nodes.push(<YieldComparisonWidget key="yieldcompare" workspace={workspace} />);
-  if (t.includes("a2a") || t.includes("loop")) nodes.push(<MantleA2ALoopWidget key="a2aloop" workspace={workspace} />);
+  if (t.includes("credit")) nodes.push(<Suspense key="credit" fallback={null}><CreditScoreMeter workspace={workspace} /></Suspense>);
+  if (t.includes("alpha")) nodes.push(<Suspense key="alphabot" fallback={null}><AlphaBotWidget workspace={workspace} /></Suspense>);
+  if (t.includes("budget")) nodes.push(<Suspense key="budget" fallback={null}><AgentBudgetDashboard workspace={workspace} /></Suspense>);
+  if (t.includes("yield") || t.includes("compare")) nodes.push(<Suspense key="yieldcompare" fallback={null}><YieldComparisonWidget workspace={workspace} /></Suspense>);
+  if (t.includes("a2a") || t.includes("loop")) nodes.push(<Suspense key="a2aloop" fallback={null}><MantleA2ALoopWidget workspace={workspace} /></Suspense>);
 
   return nodes.length > 0 ? <>{nodes}</> : null;
 }
