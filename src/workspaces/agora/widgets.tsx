@@ -2,7 +2,7 @@ import { type ReactNode, useState, useEffect, useRef, useCallback } from "react"
 import { TrendingUp, Brain, Copy, Zap, ShieldCheck, Activity, Shield, Clock, Bell, BellOff, AlertTriangle, Plus, Trash2 } from "lucide-react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
 import { Receipt as RIco } from "../../icons402";
 import { getAgoraConfig, getArcAgentStats } from "../../lib/agora";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
@@ -124,6 +124,21 @@ export function renderTab(
 }
 
 // в”Ђв”Ђ Agent extra (none for agora) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+export function renderTabContent(tab: string, ctx: TabCtx): ReactNode {
+  const { workspace, onGoTab } = ctx;
+  const t = tab.toLowerCase();
+  if (t.includes("start") || t.includes("overview")) return <ArcControlStartWidget workspace={workspace} onGoTab={onGoTab} />;
+  if (t.includes("budget")) return <ArcControlBudgetWidget workspace={workspace} />;
+  if (t.includes("strateg")) return <ArcControlStrategiesWidget workspace={workspace} />;
+  if (t.includes("source")) return <ArcControlSourcesWidget workspace={workspace} />;
+  if (t.includes("decision")) return <ArcControlDecisionRoomWidget workspace={workspace} />;
+  if (t.includes("execution")) return <ArcControlExecutionWidget workspace={workspace} />;
+  if (t.includes("position")) return <ArcControlPositionsWidget workspace={workspace} />;
+  if (t.includes("risk") || t.includes("guard")) return <ArcControlRiskGuardWidget workspace={workspace} />;
+  if (t.includes("receipt")) return <ArcControlReceiptsWidget workspace={workspace} />;
+  return <ArcControlDeveloperWidget workspace={workspace} />;
+}
+
 export function renderAgentExtra(_workspace: Workspace): ReactNode | null {
   return null;
 }

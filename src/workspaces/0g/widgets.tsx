@@ -3,11 +3,15 @@ export { ProofVerifier } from "../../components/widgets/zero-g/ProofVerifier";
 export { StoragePinWidget } from "../../components/widgets/zero-g/StoragePinWidget";
 export { OpenClawSkillConsole, TeeAttestationVerifier, DePinBulkPin } from "../../components/widgets/og-extra/OgExtraWidgets";
 export { OgIntegrationStatus } from "../../components/widgets/og-extra/OgIntegrationStatus";
+export { SealedPayloadVault } from "./inline-widgets";
 
 import type { ReactNode } from "react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
+import { DiscoveryWidget } from "../../components/widgets/DiscoveryWidget";
+import { MerchantWidget } from "../../components/widgets/MerchantWidget";
+import { SealedPayloadVault } from "./inline-widgets";
 import { Bolt, Database, Shield, Robot, Code, Receipt as RIco } from "../../icons402";
 import { InferenceJobRunner } from "../../components/widgets/zero-g/InferenceJobRunner";
 import { StoragePinWidget } from "../../components/widgets/zero-g/StoragePinWidget";
@@ -147,6 +151,49 @@ export function renderOverviewExtra(_workspace: Workspace, _onGoTab: (t: string)
       <OgEcosystemLinks />
     </>
   );
+}
+
+// ── renderTabContent ──────────────────────────────────────────────────────────
+export function renderTabContent(tab: string, ctx: TabCtx): ReactNode {
+  const { workspace } = ctx;
+  const t = tab.toLowerCase();
+  const nodes: ReactNode[] = [];
+
+  // privacy / sovereign / TEE
+  if (t.includes("privacy") || t.includes("sovereign")) {
+    nodes.push(<OgPrivacyStepper key="stepper" workspace={workspace} />);
+    nodes.push(<SealedPayloadVault key="sealvault" workspace={workspace} />);
+  }
+  if (t.includes("privacy") || t.includes("tee") || t.includes("sovereign")) {
+    nodes.push(<ProofVerifier key="proof" workspace={workspace} />);
+  }
+
+  // compute / inference
+  if (t.includes("compute") || t.includes("inference")) {
+    nodes.push(<OgComputeCostChart key="costchart" workspace={workspace} />);
+    nodes.push(<OgComputeKanban key="kanban" workspace={workspace} />);
+    nodes.push(<TeeAttestationVerifier key="tee" workspace={workspace} />);
+  }
+
+  // trading
+  if (t.includes("trading")) {
+    nodes.push(<OgAgentToAgentLoop key="a2a" workspace={workspace} />);
+    nodes.push(<OgTradingArenaWidget key="arena" workspace={workspace} />);
+  }
+
+  // agent
+  if (t.includes("agent")) {
+    nodes.push(<DiscoveryWidget key="discovery" workspaceId={workspace.id} />);
+    nodes.push(<MerchantWidget key="merchant" />);
+  }
+
+  // storage
+  if (t.includes("storage")) {
+    nodes.push(<DePinBulkPin key="depin" workspace={workspace} />);
+    nodes.push(<OgAllowlistManager key="allowlist" />);
+  }
+
+  return nodes.length > 0 ? <>{nodes}</> : null;
 }
 
 // ── Tab metadata ──────────────────────────────────────────────────────────────

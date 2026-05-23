@@ -33,6 +33,7 @@ import {
   Link as LinkIco,
   Plus,
   Robot,
+  X,
 } from "../../icons402";
 import { AgentScoreComparison } from "../../components/widgets/AgentScoreBadge";
 import { runOgInference, anchorReceiptOnChain, isOgRegistryConfigured, getOgConfig, ogExplorerTxUrl, ogExplorerAddrUrl, uploadToOgStorage, registerAgentIdentity, anchorDeliveryOnChain } from "../../lib/og";
@@ -40,6 +41,14 @@ import { vaultRecordDecision, isMantleVaultConfigured, mantleExplorerTxUrl } fro
 import { useWallet } from "../../wallet";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import * as api from "../../lib/api";
+import {
+  checkFunding,
+  fundingReceiptPayload,
+  recordFundingSpend,
+  OG_FUNDING_SCOPE,
+  OG_TREASURY_TOPUP_USD,
+} from "./funding";
+import { TreasuryPanel } from "./TreasuryPanel";
 
 // ── Economy Dashboard ──────────────────────────────────────────────────────
 type EconStats = { total: number; today: number; uniqueAgents: number; avgAmount: number };
@@ -661,6 +670,7 @@ export function OgComputeKanban({ workspace }: { workspace: Workspace }) {
   const [submitModel, setSubmitModel] = useState<string>("risk-scorer-v2");
   const [submitPrompt, setSubmitPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
 
   const KANBAN_MODELS = ["risk-scorer-v2", "llama-3-8b", "mistral-7b", "anomaly-detect", "wallet-labeler"] as const;
 
@@ -686,8 +696,15 @@ export function OgComputeKanban({ workspace }: { workspace: Workspace }) {
 
   const submitJob = async () => {
     const p = submitPrompt.trim() || `Analyse wallet 0x${hashId("kp", submitModel, 6)} with ${submitModel}`;
+    const expectedCost = 0.012;
+    const funding = checkFunding(OG_FUNDING_SCOPE, expectedCost, { mode: "treasury", serviceId: "svc_0g_compute" });
+    if (!funding.ok) {
+      setFundingErr(`Blocked before 0G compute: ${funding.reason}. Fund 0G Agent Treasury in the A2A Marketplace first.`);
+      return;
+    }
+    setFundingErr(null);
     const jobId = "job_" + hashId("kj", p + Date.now(), 8);
-    const newJob: KanbanJob = { id: jobId, model: submitModel, promptSnippet: p.slice(0, 55), cost: 0.012, latencyMs: 0, status: "queued", ts: new Date().toLocaleTimeString() };
+    const newJob: KanbanJob = { id: jobId, model: submitModel, promptSnippet: p.slice(0, 55), cost: expectedCost, latencyMs: 0, status: "queued", ts: new Date().toLocaleTimeString() };
     setEphemeral((prev) => [...prev, newJob]);
     setSubmitting(true);
     setSubmitPrompt("");
@@ -699,7 +716,21 @@ export function OgComputeKanban({ workspace }: { workspace: Workspace }) {
     const cost = og.ok ? parseFloat((latency / 1000 * 0.004 + 0.003).toFixed(4)) : 0.003;
     setEphemeral((prev) => prev.map((j) => j.id === jobId ? { ...j, status: "verified", latencyMs: latency, cost, attestationId: attestId } : j));
     setSubmitting(false);
-    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_0g_compute", serviceName: og.ok ? `0G Compute · ${og.model || submitModel}` : "0G Compute · Inference (demo)", amount: cost, currency: "USDC", network: workspace.networks[0] ?? "0g-galileo", kind: "0g.inference", payload: { model: submitModel, prompt: p, attestationId: attestId, latencyMs: latency, ogCompute: og.ok, response: og.ok ? og.content : undefined } });
+    recordFundingSpend(OG_FUNDING_SCOPE, cost, { mode: "treasury", serviceId: "svc_0g_compute", settlement: "fallback" });
+    emitReceipt({
+      workspaceId: workspace.id,
+      serviceId: "svc_0g_compute",
+      serviceName: og.ok ? `0G Compute · ${og.model || submitModel}` : "0G Compute · Inference (demo)",
+      amount: 0,
+      currency: "USDC",
+      network: workspace.networks[0] ?? "0g-galileo",
+      kind: "0g.inference",
+      payload: fundingReceiptPayload(OG_FUNDING_SCOPE, cost, {
+        mode: "treasury",
+        serviceId: "svc_0g_compute",
+        settlement: "fallback",
+      }, { model: submitModel, prompt: p, attestationId: attestId, latencyMs: latency, ogCompute: og.ok, response: og.ok ? og.content : undefined, displayAmount: cost }),
+    });
   };
 
   const COLS: { key: KanbanJob["status"]; label: string; color: string; jobs: KanbanJob[] }[] = [
@@ -713,6 +744,11 @@ export function OgComputeKanban({ workspace }: { workspace: Workspace }) {
       <div className="block-head">
         <div className="ttl"><span className="sq soft"><Network width={15} height={15} /></span><div><h3>Compute job board</h3><div className="sub">Track every inference job through Queued → Running → Verified · each step anchored to 0G</div></div></div>
       </div>
+      {fundingErr && (
+        <div style={{ margin: "0 16px 12px", padding: "9px 11px", borderRadius: 8, border: "1px solid #f59e0b44", background: "#f59e0b12", color: "#fbbf24", fontSize: 11 }}>
+          {fundingErr}
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, padding: "0 16px 12px", minHeight: 180 }}>
         {COLS.map((col) => (
@@ -873,8 +909,8 @@ export function OgPrivacyStepper({ workspace }: { workspace: Workspace }) {
 // ── OG Agent-to-Agent Loop ────────────────────────────────────────────────
 type A2AReceiptRow = { id: string; label: string; amount: number; currency: string };
 const A2A_STEPS: { title: string; body: React.ReactNode }[] = [
-  { title: "Strategist agent hires the Executor", body: <>The Strategist needs a trade made but can&apos;t run a model itself. It pays the Executor <b>$0.02 USDC</b> over HTTP&nbsp;402 — agent paying agent, no account, no key.</> },
-  { title: "Executor pulls a signal from 0G Compute", body: <>The hired Executor calls <b>0G Compute</b> for a BUY / SELL / HOLD verdict on ETH&nbsp;/&nbsp;USDC, paying <b>$0.03 USDC</b> per call out of its earned balance — <b>self-funding</b>.</> },
+  { title: "Treasury authorizes the Strategist", body: <>The Strategist can request the hire only after the <b>0G Agent Treasury</b> approves a <b>$0.02 USDC</b> x402 spend under its signed policy.</> },
+  { title: "Executor pulls a signal from 0G Compute", body: <>The Executor calls <b>0G Compute</b> for a BUY / SELL / HOLD verdict on ETH&nbsp;/&nbsp;USDC. The <b>$0.03 USDC</b> compute spend also comes from the same 0G treasury policy.</> },
   { title: "Executor anchors its decision on-chain", body: <>The Executor writes <code>recordDecision(hash(verdict), hash(context))</code> to <code>AgentVault</code> — a permanent benchmarking trail of what it decided and why.</> },
   { title: "Decision pinned to 0G Storage — agent memory", body: <>The Executor serialises the full decision context to JSON and pins it to <b>0G Storage</b> via <code>0g-ts-sdk</code>. The Merkle root is written to <code>AgentIdentityRegistry.setMemoryRoot</code> — agent memory lives forever on 0G.</> },
 ];
@@ -892,6 +928,7 @@ export function OgAgentToAgentLoop({ workspace }: { workspace: Workspace }) {
   const [selfFunding, setSelfFunding] = useState<{ earned: number; spent: number } | null>(null);
   const [rows, setRows] = useState<A2AReceiptRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [treasuryEpoch, setTreasuryEpoch] = useState(0);
   const [autoCycle, setAutoCycle] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const cycleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -910,20 +947,32 @@ export function OgAgentToAgentLoop({ workspace }: { workspace: Workspace }) {
   async function run() {
     if (phase === "running") return;
     setErr(null); setSignal(null); setDecision(null); setRows([]);
+    const hireFunding = checkFunding(OG_FUNDING_SCOPE, 0.02, { mode: "treasury", serviceId: "svc_0g_inference" });
+    const computeFunding = checkFunding(OG_FUNDING_SCOPE, 0.03, { mode: "treasury", serviceId: "svc_0g_compute" });
+    if (!hireFunding.ok || !computeFunding.ok) {
+      setErr(`Blocked before A2A loop: ${hireFunding.reason ?? computeFunding.reason}. Sign a 0G Agent Treasury allowance first.`);
+      return;
+    }
     setPhase("running");
 
     setCursor(0);
     let viaGateway = false;
     if (api.API_ENABLED) {
-      try { await api.gatewayPay("svc_0g_inference", { agentId: STRATEGIST }); viaGateway = true; } catch { viaGateway = false; }
+      try { await api.gatewayPay("svc_0g_inference", { agentId: STRATEGIST, proof: { workspaceId: "0g", fundingMode: "treasury" } }); viaGateway = true; } catch { viaGateway = false; }
     }
+    recordFundingSpend(OG_FUNDING_SCOPE, 0.02, { mode: "treasury", serviceId: "svc_0g_inference", settlement: viaGateway ? "live" : "fallback" });
+    setTreasuryEpoch((e) => e + 1);
     await sleep(viaGateway ? 250 : 650);
     const r1 = emitReceipt({
       workspaceId: workspace.id, serviceId: "svc_0g_inference", serviceName: "Agent-to-agent · Strategist hires Executor",
-      amount: 0.02, currency: "USDC", network: workspace.networks[0] ?? "0g-galileo", kind: "0g.a2a.hire", agentName: "Strategist agent",
-      payload: { from: STRATEGIST, to: EXECUTOR, via: viaGateway ? "x402-gateway" : "x402-simulated" },
+      amount: viaGateway ? 0.02 : 0, currency: "USDC", network: workspace.networks[0] ?? "0g-galileo", kind: "0g.a2a.hire", agentName: "Strategist agent",
+      payload: fundingReceiptPayload(OG_FUNDING_SCOPE, 0.02, {
+        mode: "treasury",
+        serviceId: "svc_0g_inference",
+        settlement: viaGateway ? "live" : "fallback",
+      }, { from: STRATEGIST, to: EXECUTOR, via: viaGateway ? "x402-gateway" : "x402-fallback", displayAmount: 0.02 }),
     });
-    setRows((p) => [...p, { id: r1.id, label: "Strategist → Executor · hire", amount: 0.02, currency: "USDC" }]);
+    setRows((p) => [...p, { id: r1.id, label: "Strategist → Executor · hire", amount: viaGateway ? 0.02 : 0, currency: "USDC" }]);
 
     setCursor(1);
     const prompt = "Given the current ETH/USDC price spread and 7-day momentum on 0G, answer with BUY, SELL or HOLD and a confidence 0-100. Return compact JSON {verdict, confidence}.";
@@ -942,12 +991,18 @@ export function OgAgentToAgentLoop({ workspace }: { workspace: Workspace }) {
       await sleep(600);
     }
     setSignal({ verdict, confidence, live, provider });
+    recordFundingSpend(OG_FUNDING_SCOPE, 0.03, { mode: "treasury", serviceId: "svc_0g_compute", settlement: "fallback" });
+    setTreasuryEpoch((e) => e + 1);
     const r2 = emitReceipt({
       workspaceId: workspace.id, serviceId: "svc_0g_inference", serviceName: `Agent-to-agent · 0G Compute signal · ${verdict}`,
-      amount: 0.03, currency: "USDC", network: workspace.networks[0] ?? "0g-galileo", kind: "0g.a2a.signal", agentName: "Executor agent",
-      payload: { from: EXECUTOR, to: "0g-compute", verdict, confidence, ogCompute: live, provider, prompt },
+      amount: 0, currency: "USDC", network: workspace.networks[0] ?? "0g-galileo", kind: "0g.a2a.signal", agentName: "Executor agent",
+      payload: fundingReceiptPayload(OG_FUNDING_SCOPE, 0.03, {
+        mode: "treasury",
+        serviceId: "svc_0g_compute",
+        settlement: "fallback",
+      }, { from: EXECUTOR, to: "0g-compute", verdict, confidence, ogCompute: live, provider, prompt, displayAmount: 0.03 }),
     });
-    setRows((p) => [...p, { id: r2.id, label: `Executor → 0G Compute · ${verdict} ${confidence}%`, amount: 0.03, currency: "USDC" }]);
+    setRows((p) => [...p, { id: r2.id, label: `Executor → 0G Compute · ${verdict} ${confidence}%`, amount: 0, currency: "USDC" }]);
 
     setCursor(2);
     const decisionHashHex = await sha256Hex(`${verdict}|${confidence}`);
@@ -982,7 +1037,8 @@ export function OgAgentToAgentLoop({ workspace }: { workspace: Workspace }) {
         : "https://storagescan-galileo.0g.ai";
       setMemoryPin({ blobId: rootShort, storageUrl });
     }
-    setSelfFunding({ earned: 0.02, spent: 0.03 });
+    setSelfFunding({ earned: viaGateway ? 0.02 : 0, spent: 0 });
+    setTreasuryEpoch((e) => e + 1);
 
     setPhase("done");
   }
@@ -1009,7 +1065,7 @@ export function OgAgentToAgentLoop({ workspace }: { workspace: Workspace }) {
           <span className="sq soft" style={{ color: "var(--accent-primary)" }}><Robot width={18} height={18} /></span>
           <div>
             <h3>Agents pay agents · Strategist hires Executor</h3>
-            <div className="sub">x402 micropayment → 0G Compute signal → AgentVault on-chain → 0G Storage memory. Self-funding: Executor earns, pays own compute.</div>
+            <div className="sub">0G Treasury preflight → x402 micropayment → 0G Compute signal → AgentVault audit trail → 0G Storage memory.</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -1030,6 +1086,33 @@ export function OgAgentToAgentLoop({ workspace }: { workspace: Workspace }) {
           </button>
         </div>
       </div>
+
+      <div style={{ padding: "0 16px 12px" }}>
+        <TreasuryPanel
+          key={`og-treasury-${treasuryEpoch}`}
+          scope={OG_FUNDING_SCOPE}
+          label="A2A loop autonomous spend"
+          defaultTopUpUsd={OG_TREASURY_TOPUP_USD}
+          requiredSpendUsd={0.05}
+        />
+        <div className="muted sm" style={{ marginTop: 8 }}>
+          Arc allowances and user copy-trading stake cannot fund this 0G compute loop.
+        </div>
+      </div>
+      {err && (
+        <div style={{
+          margin: "0 16px 12px",
+          padding: "9px 11px",
+          borderRadius: 10,
+          border: `1px solid ${err.includes("funded") ? "color-mix(in srgb, var(--green) 35%, transparent)" : "color-mix(in srgb, var(--yellow) 45%, transparent)"}`,
+          background: err.includes("funded") ? "color-mix(in srgb, var(--green) 9%, transparent)" : "color-mix(in srgb, var(--yellow) 9%, transparent)",
+          color: err.includes("funded") ? "var(--green)" : "var(--yellow)",
+          fontSize: ".76rem",
+          fontWeight: 700,
+        }}>
+          {err}
+        </div>
+      )}
 
       {/* Payment flow graph */}
       <div style={{ padding: "0 16px 4px" }}>
@@ -1130,11 +1213,11 @@ export function OgAgentToAgentLoop({ workspace }: { workspace: Workspace }) {
             Self-Funding Agent Economy
           </div>
           <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-            <span style={{ fontSize: ".8rem" }}>💰 <b style={{ color: "var(--green)" }}>+${selfFunding.earned.toFixed(2)}</b> <span style={{ color: "var(--muted)" }}>earned from Strategist</span></span>
-            <span style={{ fontSize: ".8rem" }}>⚡ <b style={{ color: "#f59e0b" }}>-${selfFunding.spent.toFixed(2)}</b> <span style={{ color: "var(--muted)" }}>paid to 0G Compute</span></span>
+            <span style={{ fontSize: ".8rem" }}>Treasury <b style={{ color: "var(--green)" }}>+${selfFunding.earned.toFixed(2)}</b> <span style={{ color: "var(--muted)" }}>live x402 earned</span></span>
+            <span style={{ fontSize: ".8rem" }}>Compute <b style={{ color: "#f59e0b" }}>-${selfFunding.spent.toFixed(2)}</b> <span style={{ color: "var(--muted)" }}>live spend this loop</span></span>
             <span style={{ fontSize: ".8rem" }}>📈 <b style={{ color: "var(--accent-primary)" }}>${(selfFunding.earned - selfFunding.spent).toFixed(2)} net</b> <span style={{ color: "var(--muted)" }}>profit this loop</span></span>
           </div>
-          <p style={{ margin: "6px 0 0", fontSize: ".68rem", color: "var(--muted)" }}>No human budget. Executor is permanently self-sustaining — earns USDC by serving agents, pays 0G Compute from those earnings.</p>
+          <p style={{ margin: "6px 0 0", fontSize: ".68rem", color: "var(--muted)" }}>Autonomous payments are capped by the signed 0G Agent Treasury allowance. Fallback receipts show what would be charged but do not deduct treasury.</p>
         </div>
       )}
 
@@ -2725,6 +2808,87 @@ export function OgBudgetControllerWidget({ workspace }: { workspace: Workspace }
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SealedPayloadVault — moved from WorkspaceDashboard.tsx
+// ---------------------------------------------------------------------------
+type SealedRecord = { sealId: string; recipient: string; digest: string; createdAt: string };
+export function SealedPayloadVault({ workspace }: { workspace: Workspace }) {
+  const { emitReceipt, receipts } = useAppState();
+  const [seals, setSeals] = useLocalStore<SealedRecord[]>("0g.seals", []);
+  const [recipient, setRecipient] = useState("agid_0g_a1f3");
+  const [payload, setPayload] = useState('{ "strategy": "rotate 40% mETH→USDY when spread<0.04%", "params": { "band": 0.6 } }');
+  const [unsealId, setUnsealId] = useState("");
+  const [unsealReceipt, setUnsealReceipt] = useState("");
+  const [unsealRes, setUnsealRes] = useState<{ ok: boolean; text: string } | null>(null);
+  const [sealing, setSealing] = useState(false);
+  const recent = useMemo(() => receipts.filter((r) => r.workspaceId === workspace.id && r.kind === "0g.seal").slice(0, 6), [receipts, workspace.id]);
+
+  const seal = async () => {
+    if (!payload.trim() || sealing) return;
+    setSealing(true);
+    const nonce = Math.random().toString(36).slice(2);
+    const hash = await sha256Hex(payload + recipient + nonce);
+    const sealId = "seal_" + hashId("seal", hash, 8);
+    const digest = hash.slice(0, 32);
+    setSeals((prev) => [{ sealId, recipient: recipient.trim() || "(unset)", digest, createdAt: new Date().toISOString() }, ...prev].slice(0, 20));
+    emitReceipt({ workspaceId: workspace.id, serviceName: "0G Sealed Payload", amount: 0.008, currency: "USDC", network: workspace.networks[0] ?? "0g-galileo", kind: "0g.seal", payload: { sealId, recipient: recipient.trim(), digest } });
+    setUnsealId(sealId);
+    setSealing(false);
+  };
+  const unseal = () => {
+    const s = seals.find((x) => x.sealId === unsealId.trim());
+    if (!s) { setUnsealRes({ ok: false, text: "no such seal id" }); return; }
+    const r = receipts.find((x) => x.id === unsealReceipt.trim());
+    if (!r) { setUnsealRes({ ok: false, text: "receipt not found — paste the receipt id from the seal payment" }); return; }
+    const okMatch = ((r.payload ?? {}) as { sealId?: string }).sealId === s.sealId;
+    setUnsealRes(okMatch ? { ok: true, text: `unsealed for ${s.recipient} — digest ${s.digest}…` } : { ok: false, text: "proof does not match this seal — that receipt is for a different sealed payload" });
+  };
+
+  return (
+    <div className="panel block svc-flavor">
+      <div className="block-head"><div className="ttl"><span className="sq soft"><ShieldCheck width={15} height={15} /></span><div><h3>Sealed payload vault</h3><div className="sub">encrypt a request payload for a recipient Agent ID · the vault stores only the ciphertext digest · unseal only with a matching receipt</div></div></div></div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 10, padding: "0 16px 10px", alignItems: "end" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: ".6rem", textTransform: "uppercase", letterSpacing: ".08em", color: "var(--muted)", fontWeight: 700 }}>Recipient Agent ID</span>
+          <input value={recipient} onChange={(e) => setRecipient(e.currentTarget.value)} style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid var(--line-2)", background: "var(--bg-2)", color: "var(--ink)", fontSize: ".82rem", fontFamily: "var(--mono)" }} />
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: ".6rem", textTransform: "uppercase", letterSpacing: ".08em", color: "var(--muted)", fontWeight: 700 }}>Payload (encrypted before submit)</span>
+          <input value={payload} onChange={(e) => setPayload(e.currentTarget.value)} style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid var(--line-2)", background: "var(--bg-2)", color: "var(--ink)", fontSize: ".78rem", fontFamily: "var(--mono)" }} />
+        </label>
+        <button className="btn btn-acc btn-sm" type="button" onClick={seal} disabled={sealing || !payload.trim()}>{sealing ? <><Loader2 size={12} className="wallet-spin" /> Sealing…</> : <><ShieldCheck width={12} height={12} /> Seal payload ($0.008)</>}</button>
+      </div>
+      <div style={{ padding: "0 16px 12px" }}>
+        <div style={{ fontSize: ".62rem", textTransform: "uppercase", letterSpacing: ".09em", fontWeight: 800, color: "var(--muted)", padding: "6px 0" }}>Sealed payloads · {seals.length}</div>
+        <div className="svc-table__scroll"><table className="svc-table">
+          <thead><tr><th>Seal ID</th><th>Recipient</th><th>Digest</th><th>When</th></tr></thead>
+          <tbody>
+            {seals.length === 0 && <tr><td colSpan={4} style={{ color: "var(--muted)", padding: 12 }}>No sealed payloads — seal one above.</td></tr>}
+            {seals.map((s) => (<tr key={s.sealId}><td><code>{s.sealId}</code></td><td style={{ fontFamily: "var(--mono)", fontSize: ".74rem" }}>{s.recipient}</td><td style={{ fontFamily: "var(--mono)", fontSize: ".7rem", color: "var(--muted)" }}>{s.digest}…</td><td className="muted svc-table__num">{new Date(s.createdAt).toLocaleTimeString()}</td></tr>))}
+          </tbody>
+        </table></div>
+      </div>
+      <div style={{ margin: "0 16px 12px", padding: "10px 14px", borderRadius: 12, border: "1px solid var(--line-2)", background: "var(--field)" }}>
+        <div style={{ fontSize: ".62rem", textTransform: "uppercase", letterSpacing: ".09em", fontWeight: 800, color: "var(--muted)", marginBottom: 8 }}>Unseal — requires a matching receipt id</div>
+        <div className="row sm" style={{ gap: 8, flexWrap: "wrap" }}>
+          <input value={unsealId} onChange={(e) => setUnsealId(e.currentTarget.value)} placeholder="seal id" style={{ flex: 1, minWidth: 160, padding: "7px 9px", borderRadius: 8, border: "1px solid var(--line-2)", background: "var(--bg-2)", color: "var(--ink)", fontSize: ".78rem", fontFamily: "var(--mono)" }} />
+          <input value={unsealReceipt} onChange={(e) => setUnsealReceipt(e.currentTarget.value)} placeholder="receipt id (rcpt_…)" style={{ flex: 1, minWidth: 160, padding: "7px 9px", borderRadius: 8, border: "1px solid var(--line-2)", background: "var(--bg-2)", color: "var(--ink)", fontSize: ".78rem", fontFamily: "var(--mono)" }} />
+          <button className="btn btn-sm" type="button" onClick={unseal}>Unseal</button>
+        </div>
+        {unsealRes && <div style={{ marginTop: 8, padding: "7px 12px", borderRadius: 10, background: `color-mix(in srgb, ${unsealRes.ok ? "var(--green)" : "var(--red)"} 12%, transparent)`, color: unsealRes.ok ? "var(--green)" : "var(--red)", fontSize: ".78rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 7 }}>{unsealRes.ok ? <Check width={13} height={13} /> : <X width={13} height={13} />} {unsealRes.text}</div>}
+      </div>
+      {recent.length > 0 && (
+        <div style={{ padding: "0 16px 14px" }}>
+          <div style={{ fontSize: ".62rem", textTransform: "uppercase", letterSpacing: ".09em", fontWeight: 800, color: "var(--muted)", padding: "6px 0" }}>Recent seals · {recent.length}</div>
+          <div className="svc-hist">{recent.map((r) => { const p = (r.payload ?? {}) as { sealId?: string; recipient?: string }; return (
+            <div className="svc-hist__row" key={r.id}><span className="svc-hist__dot" style={{ background: "var(--accent-primary)" }} /><div className="svc-hist__main"><b>{p.sealId}</b><span>→ {p.recipient} · receipt {r.id} · {new Date(r.createdAt).toLocaleTimeString()}</span></div><span className="svc-hist__amt">{r.amount.toFixed(3)}</span></div>
+          ); })}</div>
+        </div>
+      )}
     </div>
   );
 }

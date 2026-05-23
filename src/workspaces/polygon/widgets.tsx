@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
 import { Bolt, Link as LinkIco, Send, Robot, Shield, Receipt as RIco } from "../../icons402";
+import { fmtUsd, badgeFor } from "../../lib/ws-helpers";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
 import { TreasuryPanel } from "./TreasuryPanel";
@@ -108,6 +109,39 @@ export function renderTab(
   if (t.includes("overview")) {
     nodes.push(<PolygonStatsWidget key="stats" workspace={workspace} />);
   }
+  return nodes.length > 0 ? <>{nodes}</> : null;
+}
+
+export function renderTabContent(tab: string, ctx: TabCtx): ReactNode {
+  const { workspace, receipts } = ctx;
+  const t = tab.toLowerCase();
+  const nodes: ReactNode[] = [];
+
+  if (t.includes("merchant") || t.includes("mode")) nodes.push(<PolygonMerchantOnboardingWidget key="merchant" workspace={workspace} />);
+  if (t.includes("trade") || t.includes("finance")) nodes.push(<PolygonTradeFinanceWidget key="trade" workspace={workspace} />);
+  if (t.includes("marketplace") || t.includes("agent")) nodes.push(<PolygonAgentMarketplaceWidget key="marketplace" workspace={workspace} />);
+  if (t.includes("usdc") || t.includes("payment") || t.includes("remittance")) nodes.push(<PolygonUsdcPaymentsWidget key="usdc" workspace={workspace} />);
+  if (t.includes("overview")) nodes.push(<PolygonStatsWidget key="stats" workspace={workspace} />);
+  if (t.includes("receipt")) {
+    const wsReceipts = receipts.filter((r): r is Receipt => r.workspaceId === workspace.id);
+    nodes.push(
+      <div key="receipts" className="panel block svc-flavor">
+        <div className="block-head"><div className="ttl"><span className="sq soft"><RIco width={15} height={15} /></span><div><h3>Payment receipts</h3><div className="sub">all Polygon payments settled via x402</div></div></div></div>
+        {wsReceipts.length === 0 && <div className="muted sm" style={{ padding: "16px 20px" }}>No receipts yet — make a call to see payments here.</div>}
+        <div className="svc-hist">
+          {wsReceipts.slice(0, 20).map((r) => (
+            <div className="svc-hist__row" key={r.id}>
+              <span className="svc-hist__dot" style={{ background: "#1fb58a" }} />
+              <div className="svc-hist__main"><b>{r.serviceName}</b><span>{r.network} · {new Date(r.createdAt).toLocaleString()}</span></div>
+              {badgeFor(r.status)}
+              <span className="svc-hist__amt">{fmtUsd(r.amount)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return nodes.length > 0 ? <>{nodes}</> : null;
 }
 

@@ -6,8 +6,11 @@ export { ArbAddressBook, ArbRecurringPayments, ArbAllowanceManager, ArbContractP
 import type { ReactNode } from "react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
 import { Send, Shield, Globe, Robot, Lock, Receipt as RIco } from "../../icons402";
+import { ErrorBoundary } from "../../components/ErrorBoundary";
+import { DiscoveryWidget } from "../../components/widgets/DiscoveryWidget";
+import { MerchantWidget } from "../../components/widgets/MerchantWidget";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
 import { TreasuryPanel } from "./TreasuryPanel";
@@ -80,6 +83,57 @@ export function renderTab(t: string, workspace: Workspace, _receipts: Receipt[],
     nodes.push(<SpendRulesEditor key="rules" workspace={workspace} services={[]} />);
     nodes.push(<ArbAgentReputation key="reputation" workspace={workspace} />);
   }
+  return nodes.length > 0 ? <>{nodes}</> : null;
+}
+
+export function renderTabContent(tab: string, ctx: TabCtx): ReactNode {
+  const { workspace, services: base, onOpenPayment } = ctx;
+  const t = tab.toLowerCase();
+  const nodes: ReactNode[] = [];
+
+  if (t.includes("escrow")) {
+    nodes.push(<ArbitrumEscrowPanel key="escrow" workspace={workspace} />);
+    nodes.push(<ArbDisputePanel key="dispute" workspace={workspace} />);
+  }
+  if (t.includes("orbit") || t.includes("monitor")) {
+    nodes.push(<RobinhoodChainPanel key="robinhood" workspace={workspace} />);
+  }
+  if (t.includes("stablecoin") || t.includes("payment") || t.includes("usdc")) {
+    nodes.push(<ArbPaymentFlowDiagram key="flow" />);
+    nodes.push(<ArbAddressBook key="addrbook" />);
+    nodes.push(<UsdcTransferWidget key="usdc" workspace={workspace} />);
+    nodes.push(<BatchPayoutConsole key="batch" workspace={workspace} />);
+    nodes.push(<ArbRecurringPayments key="recurring" workspace={workspace} />);
+  }
+  if (t.includes("agent")) {
+    nodes.push(<AgentServiceRegistry key="registry" workspace={workspace} onOpenPayment={onOpenPayment} />);
+  }
+  if (t.includes("agent") || t.includes("marketplace")) {
+    nodes.push(<ArbBudgetPanel key="budget" workspace={workspace} />);
+    nodes.push(<ArbOnChainRegistry key="onchain" workspace={workspace} />);
+    nodes.push(<DiscoveryWidget key="discovery" workspaceId={workspace.id} />);
+  }
+  if (t.includes("marketplace")) {
+    nodes.push(<MerchantWidget key="merchant" />);
+  }
+  if (t.includes("stylus") || t.includes("rust") || t.includes("agent")) {
+    nodes.push(<StylusSnippetViewer key="stylus" workspace={workspace} />);
+  }
+  if (t.includes("intent") || t.includes("cross") || t.includes("agent") || t.includes("marketplace")) {
+    nodes.push(<ErrorBoundary key="intent" label="AgentIntent (ERC-7683)"><AgentIntentWidget /></ErrorBoundary>);
+  }
+  if (t.includes("stylus")) {
+    nodes.push(<ArbitrumStylusDeployPanel key="deploy" workspace={workspace} />);
+    nodes.push(<ArbContractPaymentSim key="sim" workspace={workspace} />);
+  }
+  if (t.includes("risk") || t.includes("rule") || t.includes("protection")) {
+    nodes.push(<ArbAllowanceManager key="allowance" workspace={workspace} />);
+    nodes.push(<SpendRulesEditor key="rules" workspace={workspace} services={base} />);
+  }
+  if (t.includes("risk") || t.includes("rule") || t.includes("protection") || t.includes("wallet")) {
+    nodes.push(<ArbAgentReputation key="reputation" workspace={workspace} />);
+  }
+
   return nodes.length > 0 ? <>{nodes}</> : null;
 }
 

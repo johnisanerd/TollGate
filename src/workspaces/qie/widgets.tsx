@@ -31,7 +31,7 @@ import { useLocalStore } from "../../lib/storage";
 import { deterministicScore, hashId } from "../../lib/util-hash";
 import { makeTxHash } from "../../data";
 import type { Receipt, Service, Workspace } from "../../types";
-import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
 
 // ---------------------------------------------------------------------------
 // Re-exports from widget sub-files (also imported into scope for renderTab)
@@ -933,6 +933,36 @@ export function renderTab(
       {(t.includes("pass") || t.includes("verify")) && <QiePassIssuer workspace={ws} services={svcs} />}
     </>
   );
+}
+
+// ---------------------------------------------------------------------------
+// renderTabContent() — TabCtx-based renderer (Task 4 refactor)
+// ---------------------------------------------------------------------------
+
+export function renderTabContent(tab: string, ctx: TabCtx): ReactNode {
+  const { workspace } = ctx;
+  const t = tab.toLowerCase();
+  const nodes: ReactNode[] = [];
+
+  if (t.includes("checkout")) {
+    nodes.push(<QiePosWidget key="pos" workspace={workspace} />);
+    nodes.push(<QieBillSplitter key="split" workspace={workspace} />);
+    nodes.push(<QieRequestPay key="reqpay" workspace={workspace} />);
+  }
+  if (t.includes("checkout") || t.includes("merchant")) {
+    nodes.push(<QieSalesAnalytics key="analytics" workspace={workspace} />);
+  }
+  if (t.includes("gaming") || t.includes("game")) nodes.push(<GameItemShop key="game" workspace={workspace} />);
+  if (t.includes("social") || t.includes("creator")) {
+    nodes.push(<QieCreatorTipsWidget key="tips" workspace={workspace} />);
+    nodes.push(<QieCreatorSubscriptions key="subs" workspace={workspace} />);
+  }
+  if (t.includes("wallet")) nodes.push(<QieWalletDashboard key="wallet" workspace={workspace} />);
+  if (t.includes("merchant")) nodes.push(<MerchantPayoutsPanel key="payouts" workspace={workspace} />);
+  if (t.includes("oracle")) nodes.push(<QieOracleFeedWidget key="oracle" workspace={workspace} />);
+  if (t.includes("credit")) nodes.push(<QieCreditWidget key="credit" workspace={workspace} />);
+
+  return nodes.length > 0 ? <>{nodes}</> : null;
 }
 
 // ---------------------------------------------------------------------------

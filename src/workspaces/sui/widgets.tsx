@@ -4,7 +4,7 @@ import type { Receipt } from "../../types";
 import { SuiDemoFlow, SuiLiveContractsPanel } from "./inline-widgets";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
-import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx } from "../_types";
 import { Bolt, Code, Star, Robot, Shield, Receipt as RIco } from "../../icons402";
 import {
   WalrusStorageWidget,
@@ -73,6 +73,29 @@ export function renderTab(t: string, workspace: Workspace, _receipts: Receipt[],
   if (tl.includes("intent")) return <IntentEngineWidget workspace={workspace} />;
   if (tl.includes("receipt")) return <AgentNftReputation workspace={workspace} />;
   return null;
+}
+
+export function renderTabContent(tab: string, ctx: TabCtx): ReactNode {
+  const { workspace } = ctx;
+  const t = tab.toLowerCase();
+  const nodes: ReactNode[] = [];
+
+  if (t.includes("walrus") || t.includes("storage")) nodes.push(<WalrusStorageWidget key="walrus" workspace={workspace} />);
+  if (t.includes("move") || t.includes("contracts")) nodes.push(<MoveContractViewer key="move" workspace={workspace} />);
+  if (t.includes("nft") || t.includes("market")) nodes.push(<SuiNftMarket key="nft" workspace={workspace} />);
+  if (t.includes("wallet") || t.includes("agent")) {
+    nodes.push(<SuiAgentWalletPanel key="wallet" workspace={workspace} />);
+    nodes.push(<ZkLoginPanel key="zklogin" workspace={workspace} />);
+    nodes.push(<SuiAgentEconomyLoop key="economy" workspace={workspace} />);
+  }
+  if (t.includes("yield") || t.includes("escrow")) nodes.push(<DeepBookYieldEscrow key="yield" workspace={workspace} />);
+  if (t.includes("arena")) nodes.push(<BattleArenaWidget key="arena" workspace={workspace} />);
+  if (t.includes("pay widget") || t.includes("pay button") || t.includes("widget")) nodes.push(<SuiPayButtonWidget key="pay" workspace={workspace} />);
+  if (t.includes("memory") || t.includes("memory network")) nodes.push(<AgentMemoryNetwork key="memory" workspace={workspace} />);
+  if (t.includes("intent")) nodes.push(<IntentEngineWidget key="intent" workspace={workspace} />);
+  if (t.includes("receipt")) nodes.push(<AgentNftReputation key="nft-rep" workspace={workspace} />);
+
+  return nodes.length > 0 ? <>{nodes}</> : null;
 }
 
 export function renderAgentExtra(_workspace: Workspace): ReactNode | null {
