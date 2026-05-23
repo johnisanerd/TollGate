@@ -313,9 +313,50 @@ PORT=8787 npm run dev
 VITE_SERVER_URL=http://127.0.0.1:8787 VITE_API_BASE=http://127.0.0.1:8787 npm run dev
 ```
 
+## Integration Matrix (Waves 1–4)
+
+Every integration is **env-gated** and follows the same contract: with the env
+key absent the helper returns `{ok:false, reason}` and the UI shows an empty
+state. Nothing is ever fabricated.
+
+| Integration | Cost | Required env | Module | Endpoint(s) |
+|---|---|---|---|---|
+| **OpenRouter LLM** (default: Nous Hermes 3 405B `:free`) | Free tier | `OPENROUTER_API_KEY` | `server/src/llm.ts` | `POST /api/llm/route` · `GET /api/llm/status` |
+| **Anthropic direct** (fallback) | Paid | `ANTHROPIC_API_KEY` | `server/src/llm.ts` | (chained) |
+| **Hermes self-host** (Nous Research) | Self-hosted (free) | `HERMES_URL` · opt `HERMES_API_KEY` | `server/src/llm.ts` | (chained) |
+| **Multi-exchange feeds** (OKX, Coinbase, Binance, Hyperliquid) | Free public | none | `server/src/exchanges.ts` | `GET /api/exchanges/tickers` |
+| **Arb scanner** (SSE) | Free | none | `server/src/arb-scanner.ts` | `GET /api/arb/snapshot` · `/api/arb/stream` |
+| **Pyth Network ETH/USD** | Free public Hermes | none | `server/src/pyth.ts` | `GET /api/pyth/eth` |
+| **Hyperliquid positions** (read-only) | Free public Info API | none | `src/lib/hyperliquid.ts` | (Perp tab UI) |
+| **AgentRegistry leaderboard** (slash-bonded) | Free on-chain reads | `VITE_ARC_AGENT_REGISTRY` | `src/lib/agentRegistry.ts` | (Leaderboard tab UI) |
+| **Discord alerts** | Free webhook | `DISCORD_WEBHOOK_URL` | `server/src/alerts.ts` | `GET /api/alerts/status` · `POST /api/alerts/test` |
+| **Telegram alerts** | Free | `TELEGRAM_BOT_TOKEN` · `TELEGRAM_CHAT_ID` | `server/src/alerts.ts` | (same) |
+| **Circle Paymaster / Wallets / USYC** | Developer testnet (free) | `CIRCLE_API_KEY` · `CIRCLE_PAYMASTER_POLICY_ID` · `CIRCLE_WALLET_SET_ID` · `CIRCLE_USYC_ROUTER_ADDRESS` | `server/src/circle.ts` | `GET /api/circle/status` · `POST /api/circle/wallets/create` |
+| **Pinata IPFS pinning** | Free tier | `PINATA_JWT` · opt `PINATA_GATEWAY` | `server/src/pinata.ts` | `GET /api/pinata/status` · `POST /api/pinata/pin` |
+| **Farcaster cast bot** (Neynar) | Free tier | `NEYNAR_API_KEY` · `NEYNAR_SIGNER_UUID` | `server/src/farcaster.ts` | `GET /api/farcaster/status` · `POST /api/farcaster/cast` |
+| **Apify news scraper** | Free tier (cap'd credits) | `APIFY_TOKEN` | `server/src/apify.ts` | `GET /api/apify/status` · `GET /api/apify/news` |
+| **PostHog analytics** | Free 1M events/mo | `VITE_POSTHOG_KEY` · opt `VITE_POSTHOG_HOST` | `src/lib/analytics.ts` | (browser fire-and-forget) |
+| **Galxe quest** | Free | static manifest | `docs/galxe-quest.json` | (operator dashboard) |
+| **Polymarket Gamma data** | Free public | none | `src/lib/polymarket.ts` | (Predictions tab UI) |
+| **Polymarket CLOB exec scaffold** | Free (dry-run) | `POLYMARKET_PRIVATE_KEY` · `POLYMARKET_DRY_RUN` (default `true`) | `server/src/polymarket-exec.ts` | `GET /api/polymarket/status` · `POST /api/polymarket/intent` |
+
+### Paid vs free summary
+
+- **Free / no key**: every signal source (Hyperliquid, OKX, Coinbase, Binance,
+  Pyth, Polymarket Gamma) and the OpenRouter `:free` route work out of the box.
+- **Free tier with sign-up**: OpenRouter, Pinata, Neynar, Apify, PostHog,
+  Circle developer console — none required for the platform to render.
+- **Paid optional**: Anthropic direct, Apify above free credits, OpenRouter
+  non-free models.
+- **Live tx**: requires funded keys (Arc signer, Polygon signer for Polymarket).
+  Polymarket live execution is gated behind explicit `POLYMARKET_DRY_RUN=false`
+  AND `live_signer_not_implemented` — a separate signer must be deployed
+  before real bets fire.
+
 ## Required Environment
 
-Backend:
+Backend (all optional except `NODE_ENV`/`PORT`/`CORS_ORIGIN` — missing keys
+disable the feature gracefully):
 
 ```txt
 NODE_ENV=production
@@ -328,11 +369,36 @@ ARC_RPC_URL=<Arc RPC URL>
 ARC_PRIVATE_KEY=<dedicated funded Arc signer>
 ARC_AGENT_ID=<agent id>
 ARC_SIGNAL_SOURCE_MODE=live
-APIFY_TOKEN=<optional social/news source layer>
-TELEGRAM_BOT_TOKEN=<optional alerts>
-TELEGRAM_CHAT_ID=<optional alerts>
-OPENAI_API_KEY=<optional reasoning UX>
-PINATA_JWT=<optional trace artifact storage>
+
+# LLM routing — first available provider wins
+OPENROUTER_API_KEY=<sk-or-v1-…>
+OPENROUTER_MODEL=nousresearch/hermes-3-llama-3.1-405b:free
+ANTHROPIC_API_KEY=<sk-ant-…>
+HERMES_URL=http://localhost:8080
+HERMES_API_KEY=<optional bearer for Hermes>
+
+# Alerts
+DISCORD_WEBHOOK_URL=<https://discord.com/api/webhooks/…>
+TELEGRAM_BOT_TOKEN=<bot token>
+TELEGRAM_CHAT_ID=<chat id>
+
+# Circle
+CIRCLE_API_KEY=<TEST_API_KEY:…>
+CIRCLE_WALLET_SET_ID=<wallet set id>
+CIRCLE_PAYMASTER_POLICY_ID=<policy id>
+CIRCLE_USYC_ROUTER_ADDRESS=<router address>
+
+# Data + social
+APIFY_TOKEN=<APIFY token>
+PINATA_JWT=<Pinata JWT>
+PINATA_GATEWAY=https://gateway.pinata.cloud/ipfs
+NEYNAR_API_KEY=<Neynar API key>
+NEYNAR_SIGNER_UUID=<signer UUID>
+
+# Polymarket (dry-run by default; live needs a signer wired separately)
+POLYMARKET_PRIVATE_KEY=<Polygon EOA, ≥ $5 USDC funded>
+POLYMARKET_DRY_RUN=true
+POLYMARKET_CLOB_BASE=https://clob.polymarket.com
 ```
 
 Frontend:
@@ -344,18 +410,19 @@ VITE_ARC_AGENT_TREASURY_ADDRESS=0x4Cf79c89cFd85F788f6A0d8A27e0552902622869
 VITE_ARC_STRATEGY_VAULT_ADDRESS=0xdBB4b61fC5Cbc2A456d56aFfF79a27e5155106d0
 VITE_ARC_RISK_GUARD_ADDRESS=0x0F066C8280E67F88B1c7959595E229541aFc531c
 VITE_ARC_RECEIPT_REGISTRY_ADDRESS=0xB5F9Ca1350c3EDA3FB2f0C0b7398C88BA2310693
-VITE_ARC_MARKET_FACTORY=<MarketFactory address (enables on-chain market discovery)>
-VITE_ARC_AGENT_REGISTRY=<AgentRegistry address>
-VITE_ARC_RPC_URL=<Arc public RPC URL>
+VITE_ARC_MARKET_FACTORY=0x9C36Aa5fa856893Ae70E33014985678E4Ce198AD
+VITE_ARC_AGENT_REGISTRY=0x8aD47542EBbd92696E7C69E756bdf654d867581d
+VITE_ARC_INITIAL_MARKET=0xaef1bac4a9660bABCc78304580E1ea67749f0351
+VITE_ARC_RPC_URL=https://rpc.testnet.arc-node.thecanteenapp.com/v1/public
 VITE_ARC_EXPLORER=https://testnet.arcscan.app
-VITE_POSTHOG_KEY=<optional traction analytics>
-VITE_POSTHOG_HOST=https://app.posthog.com
+VITE_POSTHOG_KEY=<phc_…>
+VITE_POSTHOG_HOST=https://us.i.posthog.com
 ```
 
 ## Verification
 
 ```bash
-# Frontend (96 tests)
+# Frontend (103 tests)
 npm test
 npx tsc --noEmit
 npm run build
@@ -367,7 +434,8 @@ cd contracts && npx hardhat compile
 # Standalone agent package
 cd packages/arcmind-agent && npx tsc --noEmit
 
-# Server
+# Server (130 tests across LLM routing, exchanges, Pyth, alerts, Circle,
+# Pinata, Farcaster, Apify, Polymarket exec, arb scanner, traction, etc.)
 cd server && npm test
 cd server && npm run typecheck
 ```
