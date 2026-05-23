@@ -8,14 +8,16 @@ const W2 = "0x24Cb6d1bE131006e8CB2cb7fBa5675725f9E6Da8";
 export const workspace: Workspace = {
   id: "agora",
   shortName: "Agora",
-  name: "ArcMind — Autonomous Trading Intelligence",
+  name: "ArcMind Control Layer",
   route: "/agora",
-  pitch: "ArcMind: the first autonomous trading agent that shows you its reasoning, lets you copy-trade with $1, and kills itself when it starts losing — all settled in USDC on Arc L1.",
-  tags: ["Cross-Chain Arb", "Copy Strategy", "Reasoning Proofs", "Decision Guard", "Kill Switch"],
+  pitch: "Give an AI market agent a USDC budget, risk limits, approved sources, and proof-backed execution on Arc. User capital stays separate from agent spending.",
+  tags: ["Agent Budget", "Risk Policy", "Source Proof", "Strategy Vault", "Arc Testnet"],
   networks: ["arc-testnet"],
-  tabs: ["Overview", "Decision Guard", "Reasoning Proofs", "Copy Strategy", "Kill Switch", "Risk-Off Vault", "App Kit", "Agent Engine", "Portfolio Manager", "Receipts", "Docs", "Integrations"],
+  tabs: ["Start", "Agent Budget", "Strategies", "Sources", "Decision Room", "Execution", "Positions", "Risk Guard", "Receipts", "Developer", "Docs", "Integrations"],
   accent: "#1652F0",
   darkAccent: "#4B7BFF",
+  overviewClass: "agora",
+  overviewAccents: ["#1652f0","#22d3ee","#10b981","#f59e0b","#8b5cf6","#fb7185","#3b82f6"],
   Icon: CircleLogo,
 };
 
@@ -65,4 +67,5 @@ export const agentRaw: AgentRaw = {
 };
 
 export const seedRows: SeedRow[] = [];
+
 

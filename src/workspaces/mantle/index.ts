@@ -16,6 +16,8 @@ export const workspace: Workspace = {
   tabs: ["Overview", "Agent Economy", "Alpha Data", "Yield Compare", "Yield Optimizer", "RWA Data", "Trading Strategies", "AI DevTools", "Agent Credit Score", "Budget Dashboard", "A2A Loop"],
   accent: "#0FBF7A",
   darkAccent: "#2BE39C",
+  overviewClass: "mantle",
+  overviewAccents: ["#0fbf7a","#f4c542","#22d3ee","#a3e635","#fb923c","#34d399","#84cc16"],
   Icon: MantleLogo,
 };
 

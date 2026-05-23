@@ -16,6 +16,8 @@ export const workspace: Workspace = {
   tabs: ["Overview", "Agent Marketplace", "USDC Payments", "Stylus Contracts", "Escrow", "Wallet Protection"],
   accent: "#1B4ADD",
   darkAccent: "#5C7CFF",
+  overviewClass: "arbitrum",
+  overviewAccents: ["#1b4add","#28a0f0","#f97316","#60a5fa","#22c55e","#818cf8","#38bdf8"],
   Icon: ArbitrumLogo,
 };
 

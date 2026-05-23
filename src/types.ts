@@ -37,6 +37,8 @@ export type Workspace = {
   tabs: string[];
   accent: string;
   darkAccent: string;
+  overviewClass: string;
+  overviewAccents: string[];
   Icon: React.FC<{ size?: number; className?: string; style?: React.CSSProperties }>;
 };
 

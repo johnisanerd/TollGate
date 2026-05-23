@@ -16,6 +16,8 @@ export const workspace: Workspace = {
   tabs: ["Overview", "Agent Wallet", "Walrus Storage", "Move Contracts", "NFT Market", "Yield Escrow", "Agent Arena", "Pay Widget", "Memory Network", "Intent Engine", "Receipts"],
   accent: "#4DA2FF",
   darkAccent: "#80BFFF",
+  overviewClass: "sui",
+  overviewAccents: ["#4da2ff","#7dd3fc","#a78bfa","#22d3ee","#f0abfc","#60a5fa","#38bdf8"],
   Icon: SuiLogo,
 };
 

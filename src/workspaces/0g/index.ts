@@ -16,6 +16,8 @@ export const workspace: Workspace = {
   tabs: ["Overview", "Agent Identity", "Compute", "Trading Arena", "Storage & Memory", "TEE & Privacy", "Receipts", "Docs", "Integrations"],
   accent: "#7C5CF8",
   darkAccent: "#9D85FF",
+  overviewClass: "zero-g",
+  overviewAccents: ["#8b5cf6","#22d3ee","#f59e0b","#34d399","#f472b6","#a78bfa","#38bdf8"],
   Icon: ZeroGLogo,
 };
 

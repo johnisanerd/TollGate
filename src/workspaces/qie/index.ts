@@ -16,6 +16,8 @@ export const workspace: Workspace = {
   tabs: ["Overview", "Merchant Checkout", "QIE Wallet", "QIE Pass", "Oracle Feed", "Agent Credit", "Game Store", "Creator Hub"],
   accent: "#00C389",
   darkAccent: "#2EE3A8",
+  overviewClass: "qie",
+  overviewAccents: ["#00c389","#facc15","#38bdf8","#fb7185","#a3e635","#2dd4bf","#f97316"],
   Icon: QieLogo,
 };
 
