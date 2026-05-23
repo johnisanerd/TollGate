@@ -10,6 +10,10 @@ import type { Receipt } from "../../types";
 import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx, OverviewCtx } from "../_types";
 import { DiscoveryWidget } from "../../components/widgets/DiscoveryWidget";
 import { MerchantWidget } from "../../components/widgets/MerchantWidget";
+import { A2AMarketplaceWidget } from "../../components/widgets/A2AMarketplaceWidget";
+import { BudgetWidget } from "../../components/widgets/BudgetWidget";
+import { AgentScoreCard } from "../../components/widgets/AgentScoreBadge";
+import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { SealedPayloadVault } from "./inline-widgets";
 import { Bolt, Shield, Robot, Code, Receipt as RIco } from "../../icons402";
 import { FileText } from "lucide-react";
@@ -123,8 +127,16 @@ export function renderAgentExtra(workspace: Workspace): ReactNode | null {
       <OpenClawSkillConsole workspace={workspace} />
       <AgentIdRegistry workspace={workspace} />
       <RevenueSplitConsole workspace={workspace} />
+      <ErrorBoundary label="A2A Marketplace"><A2AMarketplaceWidget /></ErrorBoundary>
+      <BudgetWidget />
+      <AgentScoreCard agentId="agent_0g_strategist" />
+      <OgBudgetControllerWidget workspace={workspace} />
     </>
   );
+}
+
+export function renderReceiptsExtra(workspace: Workspace): ReactNode | null {
+  return <OgMultiSigApprove workspace={workspace} />;
 }
 
 function OgEcosystemLinks() {

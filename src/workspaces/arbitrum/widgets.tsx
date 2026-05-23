@@ -10,6 +10,7 @@ import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx, OverviewCtx } from ".
 import { Send, Shield, Robot, Receipt as RIco } from "../../icons402";
 import { Network, ShieldCheck } from "lucide-react";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
+import { BudgetWidget } from "../../components/widgets/BudgetWidget";
 import { DiscoveryWidget } from "../../components/widgets/DiscoveryWidget";
 import { MerchantWidget } from "../../components/widgets/MerchantWidget";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
@@ -139,6 +140,10 @@ export function renderTabContent(tab: string, ctx: TabCtx): ReactNode {
 }
 
 export function renderAgentExtra(_workspace: Workspace): ReactNode | null {
+  return <BudgetWidget agentId="agent_arb_worker" />;
+}
+
+export function renderReceiptsExtra(_workspace: Workspace): ReactNode | null {
   return null;
 }
 

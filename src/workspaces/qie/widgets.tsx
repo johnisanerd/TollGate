@@ -973,6 +973,14 @@ export function renderAgentPanel(ws: Workspace): ReactNode {
   return <AgentWalletConsole workspace={ws} />;
 }
 
+export function renderAgentExtra(workspace: Workspace): ReactNode | null {
+  return <AgentWalletConsole workspace={workspace} />;
+}
+
+export function renderReceiptsExtra(_workspace: Workspace): ReactNode | null {
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // renderOverviewExtra() — deployed contracts panel
 // ---------------------------------------------------------------------------

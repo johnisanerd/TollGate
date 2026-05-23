@@ -1,4 +1,4 @@
-﻿import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+﻿import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   BookOpen,
@@ -55,17 +55,6 @@ import {
 import { InferenceJobRunner } from "./widgets/zero-g/InferenceJobRunner";
 import { StoragePinWidget } from "./widgets/zero-g/StoragePinWidget";
 import { ProofVerifier } from "./widgets/zero-g/ProofVerifier";
-import { MantleAgentIdentity, MantleVaultPanel, MantleBudgetPanel } from "./widgets/mantle/MantleOnchain";
-import { OpenClawSkillConsole } from "./widgets/og-extra/OgExtraWidgets";
-// #16 Lazy-load MantleExtraWidgets — AgentCreditLine used in AgentsPage
-const _mew = () => import("./widgets/mantle-extra/MantleExtraWidgets");
-const AgentCreditLine       = lazy(() => _mew().then((m) => ({ default: m.AgentCreditLine })));
-import { AgentIdRegistry, RevenueSplitConsole, OgMultiSigApprove, OgBudgetControllerWidget } from "../workspaces/0g/inline-widgets";
-import { MantleEconomyLoop } from "../workspaces/mantle/inline-widgets";
-import { AgentWalletConsole } from "../workspaces/qie/widgets";
-import { A2AMarketplaceWidget } from "./widgets/A2AMarketplaceWidget";
-import { BudgetWidget } from "./widgets/BudgetWidget";
-import { AgentScoreCard } from "./widgets/AgentScoreBadge";
 import * as api from "../lib/api";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { runOgInference, anchorReceiptOnChain, isOgRegistryConfigured, getOgConfig, ogExplorerTxUrl, ogExplorerAddrUrl, uploadToOgStorage } from "../lib/og";
@@ -84,6 +73,8 @@ type WsModule = {
   tabMeta(tab: string): TabMeta | null;
   renderTabContent(tab: string, ctx: TabCtx): ReactNode;
   renderOverviewExtra(ctx: OverviewCtx): ReactNode | null;
+  renderAgentExtra(workspace: Workspace): ReactNode | null;
+  renderReceiptsExtra(workspace: Workspace): ReactNode | null;
   cards(ctx: CardCtx & { onGoReceipts: () => void }): WsCardDef[];
 };
 
@@ -2188,22 +2179,7 @@ export function AgentsPage({ agent, workspace, tabLabel, onTogglePause }: { agen
         <SpendWeekCard agent={agent} workspace={workspace} />
         <NewAgentCard workspace={workspace} />
       </div>
-      {workspace.id === "0g" && <OgBudgetControllerWidget workspace={workspace} />}
-      {workspace.id === "0g" && <AgentIdRegistry workspace={workspace} />}
-      {workspace.id === "0g" && <RevenueSplitConsole workspace={workspace} />}
-
-      {workspace.id === "0g" && <OpenClawSkillConsole workspace={workspace} />}
-      {workspace.id === "0g" && <ErrorBoundary label="A2A Marketplace"><A2AMarketplaceWidget /></ErrorBoundary>}
-      {workspace.id === "0g" && <BudgetWidget />}
-      {workspace.id === "0g" && <AgentScoreCard agentId="agent_0g_strategist" />}
-      {workspace.id === "arbitrum" && <BudgetWidget agentId="agent_arb_worker" />}
-      {workspace.id === "qie" && <AgentWalletConsole workspace={workspace} />}
-      {workspace.id === "mantle" && <MantleAgentIdentity workspace={workspace} />}
-      {workspace.id === "mantle" && <MantleVaultPanel workspace={workspace} />}
-      {workspace.id === "mantle" && <MantleBudgetPanel workspace={workspace} />}
-      {workspace.id === "mantle" && <MantleEconomyLoop workspace={workspace} />}
-      {workspace.id === "mantle" && <ErrorBoundary label="AgentCreditLine"><Suspense fallback={null}><AgentCreditLine workspace={workspace} /></Suspense></ErrorBoundary>}
-      {workspace.id === "mantle" && <AgentScoreCard agentId="agent_mantle_strategist" />}
+      {WS_MODULES[workspace.id].renderAgentExtra(workspace)}
       <div className="panel block" style={{ marginTop: 16 }}>
         <div className="block-head"><div className="ttl"><span className="sq soft"><Shield width={15} height={15} /></span><div><h3>Enforced on every paid request</h3><div className="sub">server-side — frontend is never the source of truth</div></div></div></div>
         <ul style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 10 }}>
@@ -2360,7 +2336,7 @@ export function ReceiptsPage({ receipts, workspace, tabLabel }: { receipts: Rece
           )}
         </div>
       </div>
-      {workspace.id === "0g" && <OgMultiSigApprove workspace={workspace} />}
+      {WS_MODULES[workspace.id].renderReceiptsExtra(workspace)}
     </>
   );
 }

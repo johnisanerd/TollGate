@@ -150,6 +150,10 @@ export function renderAgentExtra(_workspace: Workspace): ReactNode | null {
   return null;
 }
 
+export function renderReceiptsExtra(_workspace: Workspace): ReactNode | null {
+  return null;
+}
+
 function PolygonEcosystemLinks() {
   const { mode } = useNetworkMode("polygon");
   const isTestnet = mode === "testnet";

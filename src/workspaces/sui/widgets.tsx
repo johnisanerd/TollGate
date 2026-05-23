@@ -103,6 +103,10 @@ export function renderAgentExtra(_workspace: Workspace): ReactNode | null {
   return null;
 }
 
+export function renderReceiptsExtra(_workspace: Workspace): ReactNode | null {
+  return null;
+}
+
 function SuiEcosystemLinks() {
   const { mode } = useNetworkMode("sui");
   const isTestnet = mode === "testnet";

@@ -3,6 +3,8 @@ export { StrategyDeployPanel, YieldProjectionCalc, WhaleAlertFeed, CreditScoreMe
 export { MantleEarnCalc, MantleAgentEconomyDashboard, MantlePortfolioRebalancer, MantleGasOptimizer, AlphaDesk, RwaRegistry, MantleEconomyLoop, YieldBoard, MantleDevToolsPanel } from "./inline-widgets";
 
 import { useState, lazy, Suspense } from "react";
+import { ErrorBoundary } from "../../components/ErrorBoundary";
+import { AgentScoreCard } from "../../components/widgets/AgentScoreBadge";
 import type { ReactNode } from "react";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
@@ -127,9 +129,14 @@ export function renderAgentExtra(workspace: Workspace): ReactNode | null {
       <MantleVaultPanel workspace={workspace} />
       <MantleBudgetPanel workspace={workspace} />
       <MantleEconomyLoop workspace={workspace} />
-      <AgentCreditLine workspace={workspace} />
+      <ErrorBoundary label="AgentCreditLine"><Suspense fallback={null}><AgentCreditLine workspace={workspace} /></Suspense></ErrorBoundary>
+      <AgentScoreCard agentId="agent_mantle_strategist" />
     </>
   );
+}
+
+export function renderReceiptsExtra(_workspace: Workspace): ReactNode | null {
+  return null;
 }
 
 const MANTLE_CONTRACTS = [
