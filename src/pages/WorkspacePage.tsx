@@ -24,6 +24,7 @@ import { ArbScannerWidget } from "../components/widgets/agora/ArbScannerWidget";
 import { ArcPerpTradingWidget } from "../components/widgets/agora/ArcPerpTradingWidget";
 import { ArcPredictionsWidget } from "../components/widgets/agora/ArcPredictionsWidget";
 import { ArcTractionWidget } from "../components/widgets/agora/ArcTractionWidget";
+import { ArcSlashLeaderboardWidget } from "../components/widgets/agora/ArcSlashLeaderboardWidget";
 import { AgoraPortfolioWidget } from "../components/widgets/agora/AgoraExtraWidgets";
 import type { VaultSummary } from "../lib/hyperliquid";
 import { slugifyTab } from "../components/ui/AppSidebar";
@@ -77,6 +78,7 @@ function AgoraControlTab({
   if (tab === "arb scanner") return <ArbScannerWidget workspace={workspace} />;
   if (tab === "perp trading") return <ArcPerpTradingWidget workspace={workspace} />;
   if (tab === "predictions") return <ArcPredictionsWidget workspace={workspace} />;
+  if (tab === "leaderboard") return <ArcSlashLeaderboardWidget workspace={workspace} />;
   if (tab === "portfolio") return (
     <div style={{ display: "grid", gap: 14 }}>
       <ArcTractionWidget />

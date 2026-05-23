@@ -18,6 +18,7 @@ import { leaderFeedProvider } from "../providers/leaderFeedProvider.js";
 import { decideEthDirectionAction } from "../actions/decideEthDirection.js";
 import { recordOnChainAction } from "../actions/recordOnChain.js";
 import { decisionAccuracyEvaluator } from "../evaluators/decisionAccuracyEvaluator.js";
+import { strategyDegradationEvaluator } from "../evaluators/degradationEvaluator.js";
 
 const DEFAULT_INTERVAL_MS = 30 * 60_000;
 
@@ -66,6 +67,11 @@ export const arcMindService: Service = {
       // Grade the previous decision (best-effort).
       if (await decisionAccuracyEvaluator.validate(runtime, undefined, state)) {
         await decisionAccuracyEvaluator.handler(runtime, undefined, state);
+      }
+
+      // Strategy degradation — rolling 7d win-rate; recommends pause when below threshold.
+      if (await strategyDegradationEvaluator.validate(runtime, undefined, state)) {
+        await strategyDegradationEvaluator.handler(runtime, undefined, state);
       }
     }
 

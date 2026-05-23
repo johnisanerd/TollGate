@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, Zap, AlertTriangle } from "lucide-react";
+import { ExternalLink, Zap, AlertTriangle, Search } from "lucide-react";
 import type { Workspace } from "../../../types";
-import { getLeaderboard, type LeaderboardEntry } from "../../../lib/hyperliquid";
+import { getLeaderboard, getClearinghouseState, type LeaderboardEntry, type HlClearinghouseState } from "../../../lib/hyperliquid";
 
 const SERVER = (import.meta.env as Record<string, string | undefined>)["VITE_SERVER_URL"] ?? "";
 
@@ -22,6 +22,20 @@ export function ArcPerpTradingWidget({ workspace: _workspace }: Props) {
   const [leaders, setLeaders] = useState<LeaderboardEntry[] | null>(null);
   const [hlEth, setHlEth] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+  const [addressInput, setAddressInput] = useState("");
+  const [positionsState, setPositionsState] = useState<HlClearinghouseState | null>(null);
+  const [positionsLoading, setPositionsLoading] = useState(false);
+
+  async function lookupPositions(addr: string) {
+    if (!addr) return;
+    setPositionsLoading(true);
+    try {
+      const state = await getClearinghouseState(addr);
+      setPositionsState(state);
+    } finally {
+      setPositionsLoading(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +98,100 @@ export function ArcPerpTradingWidget({ workspace: _workspace }: Props) {
           <AlertTriangle size={11} />
           <span>Tier A. Order execution arrives in Wave 2 once <code>HYPERLIQUID_API_PRIVATE_KEY</code> is configured. Until then this view is read-only.</span>
         </div>
+      </div>
+
+      <div style={{
+        background: "rgba(8,13,25,0.94)",
+        border: "1px solid rgba(34,211,238,0.20)",
+        borderRadius: 14, padding: 14,
+      }}>
+        <div style={{ fontSize: ".62rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".07em", fontWeight: 700, marginBottom: 10 }}>
+          Look up Hyperliquid positions (read-only)
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input
+            type="text"
+            placeholder="0x… Hyperliquid user address"
+            value={addressInput}
+            onChange={(e) => setAddressInput(e.target.value.trim())}
+            spellCheck={false}
+            style={{
+              flex: "1 1 320px", minWidth: 240,
+              padding: "8px 12px", borderRadius: 9,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              color: "#e2e8f0", fontFamily: "monospace", fontSize: ".75rem",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => void lookupPositions(addressInput)}
+            disabled={!addressInput || positionsLoading}
+            style={{
+              padding: "8px 14px", borderRadius: 9,
+              background: positionsLoading ? "rgba(34,211,238,0.15)" : "rgba(34,211,238,0.22)",
+              color: "#22d3ee",
+              border: "1px solid rgba(34,211,238,0.32)",
+              cursor: positionsLoading || !addressInput ? "default" : "pointer",
+              fontWeight: 700, fontSize: ".72rem",
+              display: "inline-flex", alignItems: "center", gap: 6,
+            }}
+          >
+            <Search size={12} />
+            {positionsLoading ? "Fetching…" : "Fetch positions"}
+          </button>
+        </div>
+        {positionsState && !positionsState.ok && (
+          <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 9, background: "rgba(251,113,133,0.08)", border: "1px solid rgba(251,113,133,0.24)", color: "#fda4af", fontSize: ".72rem" }}>
+            Hyperliquid returned no data — reason: <code>{positionsState.reason ?? "unknown"}</code>
+          </div>
+        )}
+        {positionsState && positionsState.ok && (
+          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+              <Stat label="Account value" value={fmtUsd(positionsState.accountValue)} tone="#22c55e" />
+              <Stat label="Margin used" value={fmtUsd(positionsState.totalMarginUsed)} tone="#fb7185" />
+              <Stat label="Notional pos" value={fmtUsd(positionsState.totalNtlPos)} tone="#a78bfa" />
+              <Stat label="Withdrawable" value={fmtUsd(positionsState.withdrawable)} tone="#22d3ee" />
+            </div>
+            {positionsState.positions.length === 0 ? (
+              <div style={{ color: "#94a3b8", fontSize: ".72rem", padding: "10px 0", textAlign: "center" }}>
+                No open positions for this address.
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".72rem" }}>
+                  <thead>
+                    <tr style={{ background: "rgba(34,211,238,0.06)" }}>
+                      <th style={th()}>Coin</th>
+                      <th style={th()}>Side</th>
+                      <th style={th()}>Size</th>
+                      <th style={th()}>Entry</th>
+                      <th style={th()}>Value</th>
+                      <th style={th()}>PnL</th>
+                      <th style={th()}>Lev</th>
+                      <th style={th()}>Liq px</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {positionsState.positions.map((p, idx) => (
+                      <tr key={p.coin + idx} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                        <td style={td()}>{p.coin}</td>
+                        <td style={{ ...td(), color: p.szi >= 0 ? "#22c55e" : "#fb7185", fontWeight: 700 }}>{p.szi >= 0 ? "LONG" : "SHORT"}</td>
+                        <td style={{ ...td(), fontVariantNumeric: "tabular-nums" }}>{Math.abs(p.szi).toFixed(4)}</td>
+                        <td style={{ ...td(), fontVariantNumeric: "tabular-nums" }}>{p.entryPx > 0 ? fmtUsd(p.entryPx) : "—"}</td>
+                        <td style={{ ...td(), fontVariantNumeric: "tabular-nums" }}>{fmtUsd(p.positionValue)}</td>
+                        <td style={{ ...td(), color: p.unrealizedPnl >= 0 ? "#22c55e" : "#fb7185", fontVariantNumeric: "tabular-nums" }}>{fmtUsd(p.unrealizedPnl)}</td>
+                        <td style={td()}>{p.leverage > 0 ? `${p.leverage}x ${p.leverageType}` : "—"}</td>
+                        <td style={{ ...td(), color: "#fb7185", fontVariantNumeric: "tabular-nums" }}>{p.liquidationPx > 0 ? fmtUsd(p.liquidationPx) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{

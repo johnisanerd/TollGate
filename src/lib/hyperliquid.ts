@@ -189,6 +189,76 @@ export function hyperliquidVaultUrl(vaultAddress: string): string {
   return `https://app.hyperliquid.xyz/vaults/${vaultAddress}`;
 }
 
+export interface HlPosition {
+  coin: string;
+  szi: number;
+  entryPx: number;
+  positionValue: number;
+  unrealizedPnl: number;
+  leverage: number;
+  leverageType: string;
+  liquidationPx: number;
+}
+
+export interface HlClearinghouseState {
+  ok: boolean;
+  reason?: string;
+  accountValue: number;
+  totalMarginUsed: number;
+  totalNtlPos: number;
+  totalRawUsd: number;
+  withdrawable: number;
+  positions: HlPosition[];
+  fetchedAt: number;
+}
+
+export async function getClearinghouseState(userAddress: string): Promise<HlClearinghouseState> {
+  const empty: HlClearinghouseState = {
+    ok: false,
+    accountValue: 0, totalMarginUsed: 0, totalNtlPos: 0, totalRawUsd: 0, withdrawable: 0,
+    positions: [], fetchedAt: Date.now(),
+  };
+  if (!/^0x[a-fA-F0-9]{40}$/.test(userAddress)) {
+    return { ...empty, reason: "invalid_address" };
+  }
+  try {
+    const data = await postInfo<Record<string, unknown>>({ type: "clearinghouseState", user: userAddress });
+    if (!data || typeof data !== "object") return { ...empty, reason: "empty_response" };
+    const ms = data["marginSummary"] as Record<string, unknown> | undefined;
+    const cross = data["crossMarginSummary"] as Record<string, unknown> | undefined;
+    const posRaw = Array.isArray(data["assetPositions"]) ? data["assetPositions"] as unknown[] : [];
+    const positions: HlPosition[] = [];
+    for (const ap of posRaw) {
+      if (!ap || typeof ap !== "object") continue;
+      const inner = (ap as Record<string, unknown>)["position"] as Record<string, unknown> | undefined;
+      if (!inner) continue;
+      const lev = inner["leverage"] as Record<string, unknown> | undefined;
+      positions.push({
+        coin: s(inner["coin"]),
+        szi: n(inner["szi"]),
+        entryPx: n(inner["entryPx"]),
+        positionValue: n(inner["positionValue"]),
+        unrealizedPnl: n(inner["unrealizedPnl"]),
+        leverage: lev ? n(lev["value"]) : 0,
+        leverageType: lev ? s(lev["type"]) : "",
+        liquidationPx: n(inner["liquidationPx"]),
+      });
+    }
+    return {
+      ok: true,
+      accountValue: n(ms?.["accountValue"]) || n(cross?.["accountValue"]),
+      totalMarginUsed: n(ms?.["totalMarginUsed"]),
+      totalNtlPos: n(ms?.["totalNtlPos"]),
+      totalRawUsd: n(ms?.["totalRawUsd"]),
+      withdrawable: n(data["withdrawable"]),
+      positions,
+      fetchedAt: Date.now(),
+    };
+  } catch (e) {
+    return { ...empty, reason: e instanceof Error ? e.message : "fetch_failed" };
+  }
+}
+
 /** Reset cache — used in tests. */
 export function _resetHyperliquidCache(): void {
   cache.clear();

@@ -61,6 +61,9 @@ import { runOgInference } from "./og-compute.js";
 import { routeLlmCall, isLlmConfigured } from "./llm.js";
 import { fetchAllTickers } from "./exchanges.js";
 import { buildSnapshot, onArbSnapshot, startArbScanner } from "./arb-scanner.js";
+import { getEthUsdPrice } from "./pyth.js";
+import { dispatchAlert, isAlertsConfigured } from "./alerts.js";
+import { getCircleStatus, createProgrammableWallet } from "./circle.js";
 import {
   agentById,
   agents,
@@ -236,6 +239,49 @@ apiRouter.get("/arb/snapshot", exchangeLimiter, async (req: Request, res: Respon
 
 // Boot the scanner so SSE clients get periodic snapshots without needing to poll.
 startArbScanner();
+
+// ─── Pyth Network ETH/USD oracle (free public Hermes endpoint) ──────────────
+
+apiRouter.get("/pyth/eth", exchangeLimiter, async (_req: Request, res: Response) => {
+  const price = await getEthUsdPrice();
+  if (!price.ok) return res.status(502).json(price);
+  res.json(price);
+});
+
+// ─── Alerts (Discord + Telegram) ─────────────────────────────────────────────
+
+const alertLimiter = rateLimit({
+  windowMs: 60_000, max: 5,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: "rate_limit_exceeded", retryAfterSec: 60, scope: "/api/alerts" },
+});
+
+apiRouter.get("/alerts/status", (_req: Request, res: Response) => {
+  res.json(isAlertsConfigured());
+});
+
+apiRouter.get("/circle/status", (_req: Request, res: Response) => {
+  res.json(getCircleStatus());
+});
+
+apiRouter.post("/circle/wallets/create", alertLimiter, async (req: Request, res: Response) => {
+  const rawName = typeof req.body?.name === "string" ? req.body.name : "";
+  const name = rawName.trim().slice(0, 64);
+  if (!name) {
+    res.status(400).json({ ok: false, reason: "name_required" });
+    return;
+  }
+  const result = await createProgrammableWallet(name);
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+apiRouter.post("/alerts/test", alertLimiter, async (req: Request, res: Response) => {
+  const title = typeof req.body?.title === "string" ? req.body.title.slice(0, 120) : "ArcMind test alert";
+  const body  = typeof req.body?.body  === "string" ? req.body.body.slice(0, 500)  : "Manual test from /api/alerts/test";
+  const level = req.body?.level === "warn" || req.body?.level === "alert" || req.body?.level === "success" ? req.body.level : "info";
+  const result = await dispatchAlert({ title, body, level });
+  res.json(result);
+});
 
 apiRouter.get("/arb/stream", (req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/event-stream");
