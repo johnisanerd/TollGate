@@ -66,7 +66,16 @@ export type ActivityKind =
   | "mcp.initialize"
   | "mcp.tools.list"
   | "mcp.tools.call"
-  | "og.upload";
+  | "arc.control.budget.topup"
+  | "arc.control.policy.update"
+  | "arc.control.budget.withdraw"
+  | "arc.control.sources.refresh"
+  | "arc.control.risk.exit"
+  | "arc.control.risk.arm"
+  | "arc.control.risk.disarm"
+  | "arc.control.risk.reset"
+  | "og.upload"
+  | "og.compute";
 
 export interface ActivityEvent {
   timestamp: number;
