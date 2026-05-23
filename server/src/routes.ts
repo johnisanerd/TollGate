@@ -67,6 +67,7 @@ import { getCircleStatus, createProgrammableWallet } from "./circle.js";
 import { isPinataConfigured, pinJson } from "./pinata.js";
 import { isFarcasterConfigured, postCast } from "./farcaster.js";
 import { isApifyConfigured, fetchNews } from "./apify.js";
+import { getPolymarketStatus, recordPolymarketIntent } from "./polymarket-exec.js";
 import {
   agentById,
   agents,
@@ -325,6 +326,35 @@ apiRouter.get("/apify/news", exchangeLimiter, async (req: Request, res: Response
   if (actorId) opts.actorId = actorId;
   if (typeof limit === "number" && Number.isFinite(limit)) opts.limit = limit;
   const result = await fetchNews(opts);
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+// ─── Polymarket execution scaffold (dry-run intent recorder) ────────────────
+
+apiRouter.get("/polymarket/status", (_req: Request, res: Response) => {
+  res.json(getPolymarketStatus());
+});
+
+apiRouter.post("/polymarket/intent", alertLimiter, async (req: Request, res: Response) => {
+  const tokenId = typeof req.body?.tokenId === "string" ? req.body.tokenId : "";
+  const side = req.body?.side === "BUY" || req.body?.side === "SELL" ? req.body.side : null;
+  const sizeUsdc = typeof req.body?.sizeUsdc === "number" ? req.body.sizeUsdc : Number(req.body?.sizeUsdc);
+  const price = typeof req.body?.price === "number" ? req.body.price : undefined;
+  const marketSlug = typeof req.body?.marketSlug === "string" ? req.body.marketSlug : undefined;
+  if (!side) {
+    res.status(400).json({ ok: false, status: "rejected", reason: "invalid_side" });
+    return;
+  }
+  const input: {
+    tokenId: string;
+    side: "BUY" | "SELL";
+    sizeUsdc: number;
+    price?: number;
+    marketSlug?: string;
+  } = { tokenId, side, sizeUsdc };
+  if (price !== undefined) input.price = price;
+  if (marketSlug) input.marketSlug = marketSlug;
+  const result = await recordPolymarketIntent(input);
   res.status(result.ok ? 200 : 400).json(result);
 });
 
