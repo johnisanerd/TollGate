@@ -1,5 +1,5 @@
-import type { ComponentType } from "react";
-import type { ReceiptStatus, WorkspaceId, Service, Receipt } from "../types";
+import type { ComponentType, ReactNode } from "react";
+import type { ReceiptStatus, WorkspaceId, Service, Receipt, Workspace } from "../types";
 
 export type SRaw = {
   id: string;
@@ -70,3 +70,27 @@ export type CardCtx = {
   def: Service | undefined;
   onGoReceipts: () => void;
 };
+
+// ── Context types for workspace render functions (tabs, overviews) ──────────────
+
+export interface TabCtx {
+  workspace: Workspace;
+  services: Service[];
+  receipts: Receipt[];
+  onOpenPayment: (s: Service) => void;
+  onGoTab: (t: string) => boolean;
+  onGoReceipts: () => void;
+}
+
+export interface OverviewCtx {
+  workspace: Workspace;
+  onGoTab: (t: string) => boolean;
+  onGoReceipts: () => void;
+}
+
+export interface TabMeta {
+  title: string;
+  sub: string;
+  intent: string;
+  proof: string;
+}
