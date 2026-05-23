@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import type { Workspace } from "../../../types";
 import { useAppState } from "../../../app-state";
+import { getAgoraConfig } from "../../../lib/agora";
 import {
   buildActionDisclosure,
   buildControlSnapshot,
@@ -1417,7 +1418,13 @@ export function ArcControlReceiptsWidget({ workspace }: { workspace: Workspace }
               <span>Workspace: {receipt.workspaceId}</span>
               <span>Network: {receipt.network}</span>
               <span>Payer: {String(receipt.payload?.["payer"] ?? receipt.payerWallet ?? "user wallet")}</span>
-              <span>{receipt.txHash && receipt.network === "arc-testnet" ? `Arc tx ${shortHash(receipt.txHash, 10, 6)}` : "no verified Arc tx"}</span>
+              <span>{receipt.txHash && receipt.network === "arc-testnet"
+                ? <a href={`${getAgoraConfig().explorerBase}/tx/${receipt.txHash}`} target="_blank" rel="noreferrer"
+                    style={{ color: "#60a5fa", textDecoration: "none", fontFamily: "monospace" }}
+                    title="View on ArcScan">
+                    Arc tx {shortHash(receipt.txHash, 10, 6)} ↗
+                  </a>
+                : "no verified Arc tx"}</span>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
               <ActionButton tone="soft" onClick={() => copyText(receipt.id)}><Copy size={14} /> Copy ID</ActionButton>

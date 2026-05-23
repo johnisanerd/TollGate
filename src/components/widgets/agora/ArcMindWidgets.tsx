@@ -1609,8 +1609,9 @@ function DecisionLogList({ decisions, filter }: { decisions: ArcDecision[]; filt
             </div>
             <span className="dec-log-ts" style={{ fontSize: 10, color: "#64748b" }}>{new Date(d.ts).toLocaleString()}</span>
             {d.txHash ? (
-              <a href={`https://testnet.arcscan.app/tx/${d.txHash}`} target="_blank" rel="noreferrer"
+              <a href={arcExplorerTxUrl(d.txHash)} target="_blank" rel="noreferrer"
                 onClick={e => e.stopPropagation()}
+                title="View decision on ArcScan"
                 style={{ color: "#8b5cf6", flexShrink: 0, lineHeight: 0 }}>
                 <ExternalLink size={13} />
               </a>
