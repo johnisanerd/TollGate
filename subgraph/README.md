@@ -24,30 +24,56 @@ subgraph/
   schema.graphql         # GraphQL entity schema
   abis/                  # extracted JSON ABIs (copy from contracts/artifacts)
   src/
-    agent-registry.ts    # AssemblyScript event handlers (TODO)
+    agent-registry.ts    # AssemblyScript event handlers
     market-factory.ts
     copy-trade-market.ts
 ```
 
-## Deploy
+## Deploy (Subgraph Studio — free tier)
+
+> Note: The Graph hosted service was shut down in 2024. Use Subgraph Studio.
 
 ```bash
-cd subgraph
+# 1. Install graph-cli
 npm install --save-dev @graphprotocol/graph-cli @graphprotocol/graph-ts
+
+# 2. Authenticate with your deploy key from https://thegraph.com/studio/
+npx graph auth --studio <GRAPH_DEPLOY_KEY>
+
+# 3. Build
+cd subgraph
 npx graph codegen
 npx graph build
 
-# Hosted service (recommended for hackathon — free, no GRT bond)
-npx graph deploy --product hosted-service kravadk/arcmind-arc
+# 4. Deploy to Studio
+npx graph deploy --studio arcmind-arc
 ```
 
-Set `GRAPH_DEPLOY_KEY` in the env and the deploy will create a public GraphQL
-endpoint that ArcMind frontend can hit instead of paging RPC logs.
+Set `GRAPH_DEPLOY_KEY` (from Subgraph Studio dashboard) in your env.
+
+### Arc Testnet as custom network
+
+Arc L1 testnet (chainId 5042002) is a custom network. Add it to `~/.graph/config.json`:
+
+```json
+{
+  "networks": {
+    "arc-testnet": {
+      "rpc": "https://rpc.testnet.arc-node.thecanteenapp.com/v1/public",
+      "chainId": 5042002
+    }
+  }
+}
+```
+
+The public GraphQL endpoint after deploy:
+`https://api.studio.thegraph.com/query/<id>/arcmind-arc/version/latest`
+
+Set `GRAPH_QUERY_URL` in the server env to enable the query API.
 
 ## Status
 
-This directory ships the **declarative artifacts** (`subgraph.yaml`,
-`schema.graphql`, this README). The AssemblyScript handlers live under
-`subgraph/src/` and are stubs — implement them when wiring the production
-subgraph deployment. The frontend continues to work without the subgraph
-because `src/lib/agentRegistry.ts` falls back to `provider.getLogs()`.
+This directory ships the declarative artifacts (`subgraph.yaml`, `schema.graphql`).
+The AssemblyScript handlers in `subgraph/src/` are stubs — the frontend continues
+to work without the subgraph because `src/lib/agentRegistry.ts` falls back to
+`provider.getLogs()`.

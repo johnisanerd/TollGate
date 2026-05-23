@@ -9,6 +9,7 @@
  * 60-second in-memory cache. Returns [] on any error — never invented markets.
  */
 
+const SERVER_URL = (import.meta as { env?: Record<string, string> }).env?.["VITE_SERVER_URL"] ?? "";
 const GAMMA_BASE = "https://gamma-api.polymarket.com";
 const TTL_MS = 60_000;
 
@@ -104,7 +105,10 @@ async function getJson<T>(url: string): Promise<T | null> {
 
 export async function getTopMarkets(limit = 12): Promise<PolymarketMarket[]> {
   const clampedLimit = Math.max(1, Math.min(50, Math.floor(limit)));
-  const url = `${GAMMA_BASE}/markets?active=true&closed=false&limit=${clampedLimit}&order=volume24hr&ascending=false`;
+  // Prefer server proxy to avoid CORS issues; fall back to direct Gamma API
+  const url = SERVER_URL
+    ? `${SERVER_URL}/api/polymarket/markets?limit=${clampedLimit}`
+    : `${GAMMA_BASE}/markets?active=true&closed=false&limit=${clampedLimit}&order=volume24hr&ascending=false`;
   const data = await getJson<unknown[]>(url);
   if (!Array.isArray(data)) return [];
   return data
@@ -117,7 +121,9 @@ export async function getTopMarkets(limit = 12): Promise<PolymarketMarket[]> {
 export async function getMarketsByTag(tag: string, limit = 12): Promise<PolymarketMarket[]> {
   const tagClean = tag.trim().toLowerCase();
   if (!tagClean) return getTopMarkets(limit);
-  const url = `${GAMMA_BASE}/markets?active=true&closed=false&tag=${encodeURIComponent(tagClean)}&limit=${limit}&order=volume24hr&ascending=false`;
+  const url = SERVER_URL
+    ? `${SERVER_URL}/api/polymarket/markets?limit=${limit}&tag=${encodeURIComponent(tagClean)}`
+    : `${GAMMA_BASE}/markets?active=true&closed=false&tag=${encodeURIComponent(tagClean)}&limit=${limit}&order=volume24hr&ascending=false`;
   const data = await getJson<unknown[]>(url);
   if (!Array.isArray(data)) return [];
   return data

@@ -64,7 +64,8 @@ export async function createProgrammableWallet(name: string): Promise<CircleWall
   if (!walletSetId) return { ok: false, reason: "wallet_set_id_missing" };
 
   try {
-    const res = await fetch("https://api.circle.com/v1/w3s/developer/wallets", {
+    const base = apiKey.startsWith("TEST_API_KEY") ? "https://api-sandbox.circle.com" : "https://api.circle.com";
+    const res = await fetch(`${base}/v1/w3s/developer/wallets`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({

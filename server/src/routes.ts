@@ -358,6 +358,27 @@ apiRouter.post("/polymarket/intent", alertLimiter, async (req: Request, res: Res
   res.status(result.ok ? 200 : 400).json(result);
 });
 
+// Server-side Gamma API proxy — avoids browser CORS issues, adds 60s cache
+const pmMarketsCache = new Map<string, { data: unknown; ts: number }>();
+apiRouter.get("/polymarket/markets", async (req: Request, res: Response) => {
+  const limit = Math.min(50, Math.max(1, parseInt(String(req.query?.["limit"] ?? "24"), 10) || 24));
+  const tag = typeof req.query?.["tag"] === "string" ? req.query["tag"].slice(0, 60) : "";
+  const cacheKey = `markets:${limit}:${tag}`;
+  const hit = pmMarketsCache.get(cacheKey);
+  if (hit && Date.now() - hit.ts < 60_000) { res.json(hit.data); return; }
+  try {
+    const params = new URLSearchParams({ active: "true", closed: "false", limit: String(limit), order: "volume24hr", ascending: "false" });
+    if (tag) params.set("tag", tag);
+    const upstream = await fetch(`https://gamma-api.polymarket.com/markets?${params}`, { signal: AbortSignal.timeout(8_000), headers: { Accept: "application/json" } });
+    if (!upstream.ok) { res.status(502).json({ ok: false, reason: `gamma_${upstream.status}` }); return; }
+    const data = await upstream.json();
+    pmMarketsCache.set(cacheKey, { data, ts: Date.now() });
+    res.json(data);
+  } catch (e) {
+    res.status(503).json({ ok: false, reason: e instanceof Error ? e.message.slice(0, 100) : "fetch_failed" });
+  }
+});
+
 apiRouter.post("/alerts/test", alertLimiter, async (req: Request, res: Response) => {
   const title = typeof req.body?.title === "string" ? req.body.title.slice(0, 120) : "ArcMind test alert";
   const body  = typeof req.body?.body  === "string" ? req.body.body.slice(0, 500)  : "Manual test from /api/alerts/test";
