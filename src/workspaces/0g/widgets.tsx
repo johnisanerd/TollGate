@@ -7,7 +7,7 @@ export { OgIntegrationStatus } from "../../components/widgets/og-extra/OgIntegra
 import type { ReactNode } from "react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
 import { Bolt, Database, Shield, Robot, Code, Receipt as RIco } from "../../icons402";
 import { InferenceJobRunner } from "../../components/widgets/zero-g/InferenceJobRunner";
 import { StoragePinWidget } from "../../components/widgets/zero-g/StoragePinWidget";
@@ -147,4 +147,20 @@ export function renderOverviewExtra(_workspace: Workspace, _onGoTab: (t: string)
       <OgEcosystemLinks />
     </>
   );
+}
+
+// ── Tab metadata ──────────────────────────────────────────────────────────────
+export function tabMeta(tab: string): TabMeta | null {
+  const t = tab.toLowerCase();
+  if (t.includes("identity") || t.includes("agent"))
+    return { title: "Agent identity and authority", sub: "Register agent identity, set budget authority and connect it to paid compute/storage actions.", intent: "Identity", proof: "agent registry" };
+  if (t.includes("compute") || t.includes("inference"))
+    return { title: "0G compute job console", sub: "Run inference jobs, compare cost, track queue state and verify execution metadata.", intent: "Compute", proof: "job receipt" };
+  if (t.includes("trading"))
+    return { title: "0G trading arena", sub: "Use 0G compute as the arena where agents generate, compare and settle market signals.", intent: "Agent market", proof: "A2A loop" };
+  if (t.includes("storage"))
+    return { title: "0G storage memory layer", sub: "Pin agent memory, manage allowlists and prove which data was stored or retrieved.", intent: "Storage", proof: "content hash" };
+  if (t.includes("privacy") || t.includes("tee") || t.includes("sovereign"))
+    return { title: "TEE privacy proof flow", sub: "Seal payloads, run private execution and unseal only with matching receipt proof.", intent: "Privacy", proof: "attestation" };
+  return null;
 }

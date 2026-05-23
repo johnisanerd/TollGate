@@ -6,10 +6,12 @@ export { ArbAddressBook, ArbRecurringPayments, ArbAllowanceManager, ArbContractP
 import type { ReactNode } from "react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
 import { Send, Shield, Globe, Robot, Lock, Receipt as RIco } from "../../icons402";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
+import { TreasuryPanel } from "./TreasuryPanel";
+import { ARB_FUNDING_SCOPE, ARB_TREASURY_TOPUP_USD } from "./funding";
 import { ArbitrumEscrowPanel } from "../../components/widgets/arbitrum/ArbitrumEscrowPanel";
 import { BatchPayoutConsole, StylusSnippetViewer, RobinhoodChainPanel } from "../../components/widgets/arbitrum-extra/ArbitrumExtraWidgets";
 import { AgentIntentWidget } from "../../components/widgets/arbitrum-extra/AgentIntentWidget";
@@ -54,6 +56,15 @@ export function renderTab(t: string, workspace: Workspace, _receipts: Receipt[],
     nodes.push(<ArbRecurringPayments key="recurring" workspace={workspace} />);
   }
   if (t.includes("agent") || t.includes("marketplace")) {
+    nodes.push(
+      <div key="treasury" style={{ marginBottom: 14 }}>
+        <TreasuryPanel
+          scope={ARB_FUNDING_SCOPE}
+          label="Agent Marketplace x402 calls"
+          defaultTopUpUsd={ARB_TREASURY_TOPUP_USD}
+        />
+      </div>,
+    );
     nodes.push(<AgentServiceRegistry key="registry" workspace={workspace} onOpenPayment={onOpenPayment} />);
     nodes.push(<ArbBudgetPanel key="budget" workspace={workspace} />);
     nodes.push(<ArbOnChainRegistry key="onchain-reg" workspace={workspace} />);
@@ -127,4 +138,22 @@ export function renderOverviewExtra(_workspace: Workspace, _onGoTab: (t: string)
       <ArbEcosystemLinks />
     </>
   );
+}
+
+// ── Tab metadata ──────────────────────────────────────────────────────────────
+export function tabMeta(tab: string): TabMeta | null {
+  const t = tab.toLowerCase();
+  if (t.includes("stablecoin") || t.includes("payment") || t.includes("usdc"))
+    return { title: "USDC payment operations", sub: "Send, schedule and batch Arbitrum USDC payments through agent-safe controls.", intent: "Payments", proof: "USDC transfer flow" };
+  if (t.includes("escrow"))
+    return { title: "Agent escrow release flow", sub: "Hold funds until delivery is verified, then release, refund or dispute with clear audit state.", intent: "Escrow", proof: "release/refund state" };
+  if (t.includes("orbit") || t.includes("monitor"))
+    return { title: "Orbit chain health monitor", sub: "Track settlement health, bridge status and operational readiness for Orbit-based products.", intent: "Monitoring", proof: "chain status" };
+  if (t.includes("agent") || t.includes("marketplace"))
+    return { title: "Agent service marketplace", sub: "Register services, enforce budgets and route agent intents through onchain-safe rails.", intent: "Marketplace", proof: "registry + budget" };
+  if (t.includes("risk") || t.includes("rule") || t.includes("protection"))
+    return { title: "Spend protection rules", sub: "Define allowlists, max spend and contract safety checks before payments are approved.", intent: "Risk control", proof: "policy enforcement" };
+  if (t.includes("stylus") || t.includes("rust"))
+    return { title: "Stylus contract workspace", sub: "Review and simulate Rust/Stylus contract payment flows before shipping them.", intent: "Contracts", proof: "contract sim" };
+  return null;
 }

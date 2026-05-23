@@ -4,7 +4,7 @@ import type { Receipt } from "../../types";
 import { SuiDemoFlow, SuiLiveContractsPanel } from "./inline-widgets";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
-import type { SigBlock, CardDef, CardCtx } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
 import { Bolt, Code, Star, Robot, Shield, Receipt as RIco } from "../../icons402";
 import {
   WalrusStorageWidget,
@@ -103,4 +103,30 @@ export function renderOverviewExtra(workspace: Workspace, onGoTab: (t: string) =
       <SuiEcosystemLinks />
     </>
   );
+}
+
+// ── Tab metadata ──────────────────────────────────────────────────────────────
+export function tabMeta(tab: string): TabMeta | null {
+  const t = tab.toLowerCase();
+  if (t.includes("walrus") || t.includes("storage"))
+    return { title: "Walrus storage workflow", sub: "Store assets and agent memory, then verify object references and payment state.", intent: "Storage", proof: "object proof" };
+  if (t.includes("move") || t.includes("contracts"))
+    return { title: "Move contract workspace", sub: "Inspect Move contract flows and payment hooks in the context of agent actions.", intent: "Contracts", proof: "module view" };
+  if (t.includes("nft") || t.includes("market"))
+    return { title: "Sui NFT market flow", sub: "List, buy and evaluate NFT actions through agent-controlled payment and reputation.", intent: "Market", proof: "NFT action" };
+  if (t.includes("wallet") || t.includes("agent"))
+    return { title: "Sui agent wallet", sub: "Control agent wallet state, zkLogin, approvals and economy loop from one place.", intent: "Wallet", proof: "wallet policy" };
+  if (t.includes("yield") || t.includes("escrow"))
+    return { title: "DeepBook yield escrow", sub: "Preview yield and escrow actions before an agent commits funds.", intent: "Yield", proof: "escrow state" };
+  if (t.includes("arena"))
+    return { title: "Battle arena", sub: "Let agents compete, spend and earn with visible rules and result receipts.", intent: "Game economy", proof: "match result" };
+  if (t.includes("pay widget") || t.includes("pay button") || t.includes("widget"))
+    return { title: "Sui pay widget", sub: "Configure a payment widget as the entry point for user-facing agent commerce.", intent: "Payments", proof: "widget config" };
+  if (t.includes("memory"))
+    return { title: "Agent memory network", sub: "Connect memory records, ownership and retrieval to usable agent workflows.", intent: "Memory", proof: "memory graph" };
+  if (t.includes("intent"))
+    return { title: "Intent engine", sub: "Translate user intent into executable agent steps with explicit constraints.", intent: "Intent", proof: "intent plan" };
+  if (t.includes("receipt"))
+    return { title: "Reputation receipts", sub: "Turn completed actions into reputation evidence that users can inspect.", intent: "Reputation", proof: "NFT receipt" };
+  return null;
 }

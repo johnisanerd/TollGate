@@ -6,9 +6,11 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
+import { TreasuryPanel } from "./TreasuryPanel";
+import { MNT_FUNDING_SCOPE, MNT_TREASURY_TOPUP_USD } from "./funding";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
 import { ArrowUpRight, Bell, Database, Robot, Bolt, Receipt as RIco } from "../../icons402";
 import { MantleAgentIdentity, MantleVaultPanel, MantleBudgetPanel } from "../../components/widgets/mantle/MantleOnchain";
 import { StrategyDeployPanel, YieldProjectionCalc, WhaleAlertFeed, CreditScoreMeter, AlphaBotWidget, AgentCreditLine, AgentBudgetDashboard, YieldComparisonWidget, MantleA2ALoopWidget } from "../../components/widgets/mantle-extra/MantleExtraWidgets";
@@ -41,8 +43,12 @@ export function cards({ onGoTab, onOpenPayment: _onOpenPayment, wsReceipts, def:
 export function renderTab(t: string, workspace: Workspace, _receipts: Receipt[], _onOpenPayment: (s: Service) => void): ReactNode | null {
   const nodes: ReactNode[] = [];
   if (t.includes("strateg") || t.includes("sandbox")) nodes.push(<StrategyDeployPanel key="strategy" workspace={workspace} />);
-  if (t.includes("economy")) nodes.push(<MantleAgentEconomyDashboard key="economy" workspace={workspace} />);
+  if (t.includes("economy")) {
+    nodes.push(<div key="economy-treasury" style={{ marginBottom: 14 }}><TreasuryPanel scope={MNT_FUNDING_SCOPE} label="Agent Economy autonomous spend" defaultTopUpUsd={MNT_TREASURY_TOPUP_USD} /></div>);
+    nodes.push(<MantleAgentEconomyDashboard key="economy" workspace={workspace} />);
+  }
   if (t.includes("alpha")) {
+    nodes.push(<div key="alpha-treasury" style={{ marginBottom: 14 }}><TreasuryPanel scope={MNT_FUNDING_SCOPE} label="Alpha & RWA data calls" defaultTopUpUsd={MNT_TREASURY_TOPUP_USD} /></div>);
     nodes.push(<AlphaDesk key="alpha" workspace={workspace} />);
     nodes.push(<WhaleAlertFeed key="whale" workspace={workspace} />);
     nodes.push(<AlphaBotWidget key="alphabot" workspace={workspace} />);
@@ -61,7 +67,10 @@ export function renderTab(t: string, workspace: Workspace, _receipts: Receipt[],
   if (t.includes("credit")) nodes.push(<CreditScoreMeter key="credit" workspace={workspace} />);
   if (t.includes("budget")) nodes.push(<AgentBudgetDashboard key="budget" workspace={workspace} />);
   if (t.includes("compare")) nodes.push(<YieldComparisonWidget key="yieldcompare" workspace={workspace} />);
-  if (t.includes("a2a") || t.includes("loop")) nodes.push(<MantleA2ALoopWidget key="a2aloop" workspace={workspace} />);
+  if (t.includes("a2a") || t.includes("loop")) {
+    nodes.push(<div key="a2a-treasury" style={{ marginBottom: 14 }}><TreasuryPanel scope={MNT_FUNDING_SCOPE} label="A2A loop autonomous spend" defaultTopUpUsd={MNT_TREASURY_TOPUP_USD} /></div>);
+    nodes.push(<MantleA2ALoopWidget key="a2aloop" workspace={workspace} />);
+  }
   return nodes.length > 0 ? <>{nodes}</> : null;
 }
 
@@ -147,4 +156,26 @@ export function renderOverviewExtra(_workspace: Workspace, _onGoTab: (t: string)
       <MantleEcosystemLinks />
     </>
   );
+}
+
+// ── Tab metadata ──────────────────────────────────────────────────────────────
+export function tabMeta(tab: string): TabMeta | null {
+  const t = tab.toLowerCase();
+  if (t.includes("economy"))
+    return { title: "Mantle agent economy", sub: "Track autonomous agent wallets, service demand and paid economic loops on Mantle.", intent: "Economy", proof: "agent activity" };
+  if (t.includes("alpha"))
+    return { title: "Alpha intelligence desk", sub: "Combine whale alerts, alpha feeds and bot decisions into a tradable signal workspace.", intent: "Alpha", proof: "signal feed" };
+  if (t.includes("meth") || t.includes("usdy") || t.includes("yield") || t.includes("compare"))
+    return { title: "Yield allocation console", sub: "Compare mETH, USDY and yield routes, then simulate rebalancing before capital moves.", intent: "Yield", proof: "projection" };
+  if (t.includes("rwa"))
+    return { title: "RWA registry and risk desk", sub: "Review RWA instruments, risk attributes and evidence before agent allocation.", intent: "RWA", proof: "registry" };
+  if (t.includes("strateg") || t.includes("sandbox"))
+    return { title: "Strategy simulation lab", sub: "Run backtests, deploy strategy candidates and keep receipts for each simulation.", intent: "Simulation", proof: "backtest result" };
+  if (t.includes("devtool") || t.includes("dev tool"))
+    return { title: "Mantle developer toolbench", sub: "Optimize gas, inspect chain settings and turn dev actions into product-ready flows.", intent: "Developer", proof: "tool output" };
+  if (t.includes("credit") || t.includes("budget"))
+    return { title: "Agent credit and budget desk", sub: "Score agents, approve credit lines and constrain daily spend before autonomous execution.", intent: "Credit", proof: "budget policy" };
+  if (t.includes("a2a") || t.includes("loop"))
+    return { title: "Agent-to-agent loop", sub: "Show how Mantle agents discover, pay and complete services with traceable state.", intent: "A2A", proof: "loop receipt" };
+  return null;
 }

@@ -2,70 +2,41 @@ import { type ReactNode, useState, useEffect, useRef, useCallback } from "react"
 import { TrendingUp, Brain, Copy, Zap, ShieldCheck, Activity, Shield, Clock, Bell, BellOff, AlertTriangle, Plus, Trash2 } from "lucide-react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
 import { Receipt as RIco } from "../../icons402";
 import { getAgoraConfig, getArcAgentStats } from "../../lib/agora";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { useLocalStore } from "../../lib/storage";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
-import { AgoraTradingWidget } from "../../components/widgets/agora/AgoraTradingWidget";
 import {
-  AgoraPortfolioWidget,
-  AgoraCircleToolsWidget,
-  AgoraX402Widget,
-  AgoraLeaderboardWidget,
-  AgoraCctpWidget,
-  ArcMindSwapWidget,
-  ArcMindYieldWidget,
-  ArcAppKitWidget,
-} from "../../components/widgets/agora/AgoraExtraWidgets";
-import {
-  ArcMindCopyTradingWidget,
-  ArcMindReasoningWidget,
-  ArcMindSignalHubWidget,
-  ArcMindKillSwitchWidget,
-  ArcDecisionLogWidget,
-  ArcMindDebateWidget,
-  ArcMindPnLWidget,
-} from "../../components/widgets/agora/ArcMindWidgets";
+  ArcControlBudgetWidget,
+  ArcControlDecisionRoomWidget,
+  ArcControlDeveloperWidget,
+  ArcControlExecutionWidget,
+  ArcControlPositionsWidget,
+  ArcControlReceiptsWidget,
+  ArcControlRiskGuardWidget,
+  ArcControlSourcesWidget,
+  ArcControlStartWidget,
+  ArcControlStrategiesWidget,
+} from "../../components/widgets/agora/ArcControlWidgets";
 
-// ── Re-exports (kept for backward compat) ──────────────────────────────────────
-export { AgoraTradingWidget } from "../../components/widgets/agora/AgoraTradingWidget";
-export {
-  AgoraPortfolioWidget,
-  AgoraCircleToolsWidget,
-  AgoraX402Widget,
-  AgoraLeaderboardWidget,
-  AgoraCctpWidget,
-  ArcMindSwapWidget,
-  ArcMindYieldWidget,
-  ArcAppKitWidget,
-} from "../../components/widgets/agora/AgoraExtraWidgets";
-export {
-  ArcMindCopyTradingWidget,
-  ArcMindReasoningWidget,
-  ArcMindSignalHubWidget,
-  ArcMindKillSwitchWidget,
-  ArcDecisionLogWidget,
-  ArcMindDebateWidget,
-  ArcMindPnLWidget,
-} from "../../components/widgets/agora/ArcMindWidgets";
-
-// ── Signature block ────────────────────────────────────────────────────────────
+// в”Ђв”Ђ Re-exports (kept for backward compat) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+// в”Ђв”Ђ Signature block в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 export const signature: SigBlock = {
-  title: "ArcMind — Slash-Bonded Trading Agent",
-  sub: "Autonomous BUY/SELL/HOLD decisions recorded on Arc L1 · reasoning traces sold via Circle Gateway Nanopayments",
-  headers: ["Layer", "Role", "Circle Tool", "Status"],
+  title: "ArcMind Control Layer",
+  sub: "USDC agent budget В· user strategy vault В· source-proofed decisions В· policy-gated execution on Arc",
+  headers: ["Layer", "Role", "Funding", "Status"],
   rows: [
-    ["Decision loop", "30-min autonomous signals", "ArcMindRegistry", "active"],
-    ["Trace marketplace", "$0.01/view via Nanopayments", "Gateway x402", "active"],
-    ["Copy-trade escrow", "USDC stake + slash-bond", "USDC · Contracts", "active"],
-    ["Kill switch", "auto-exit on drawdown >15%", "ERC-8183 escrow", "active"],
+    ["Agent Budget", "Pays autonomous source/action costs", "Agent Treasury", "policy-gated"],
+    ["Strategy Vault", "Holds user copy/risk-off capital", "User wallet", "separate"],
+    ["Decision Room", "COPY/HOLD/REDUCE/STOP from sources", "free + treasury", "active"],
+    ["Receipts", "Proof of action, payer and live/blocked status", "USDC/Arc", "visible"],
   ],
   accentCol: 3,
 };
 
-// ── Cards ──────────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ Cards в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 export function cards({
   onGoTab,
   wsReceipts,
@@ -74,45 +45,45 @@ export function cards({
   return [
     {
       light: true,
+      ico: Shield,
+      title: "Start Control Layer",
+      sub: "Create budget, choose policy, approve agent actions",
+      onClick: () => onGoTab("Start"),
+    },
+    {
+      ico: Zap,
+      title: "Fund Agent Budget",
+      sub: "Daily cap, max per call, allowed sources/actions",
+      onClick: () => onGoTab("Agent Budget"),
+    },
+    {
       ico: Activity,
-      title: "Decision Guard",
-      sub: "Live BUY/SELL/HOLD · real Hyperliquid OI · on-chain log",
-      onClick: () => onGoTab("signal"),
+      title: "Inspect Sources",
+      sub: "Market, OI, prediction, social and leader feed status",
+      onClick: () => onGoTab("Sources"),
     },
     {
       ico: Brain,
-      title: "View Reasoning Proofs",
-      sub: "$0.01/trace via Circle Gateway Nanopayments",
-      onClick: () => onGoTab("reasoning"),
-    },
-    {
-      ico: Copy,
-      title: "Copy ArcMind Strategy",
-      sub: "Stake USDC · auto-exit on drawdown >15%",
-      onClick: () => onGoTab("copy"),
-    },
-    {
-      ico: Shield,
-      title: "Kill Switch monitor",
-      sub: "EIP-191 signed · ERC-8183 auto-close",
-      onClick: () => onGoTab("kill"),
+      title: "Decision Room",
+      sub: "Approve, reject or automate a policy-gated action",
+      onClick: () => onGoTab("Decision Room"),
     },
     {
       ico: TrendingUp,
-      title: "Arb Agent — Arc vs Base",
-      sub: "ETH/USDC gap · CCTP · $0.05",
-      onClick: () => onGoTab("arbitrage"),
+      title: "Manage Positions",
+      sub: "Reduce, close, settle or withdraw user capital",
+      onClick: () => onGoTab("Positions"),
     },
     {
       ico: RIco,
-      title: "View all receipts",
-      sub: `${wsReceipts.length} Arc payments`,
+      title: "View receipts",
+      sub: `${wsReceipts.length} user actions and payment proofs`,
       onClick: () => onGoReceipts(),
     },
   ];
 }
 
-// ── Tab renderer ───────────────────────────────────────────────────────────────
+// в”Ђв”Ђ Tab renderer в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 export function renderTab(
   t: string,
   workspace: Workspace,
@@ -122,65 +93,42 @@ export function renderTab(
   const nodes: ReactNode[] = [];
   const tab = t.toLowerCase();
 
-  if (tab.includes("arbitrage") || tab.includes("arb") || tab.includes("engine")) {
-    nodes.push(<AgoraTradingWidget key="trading" />);
-  }
-  if (tab.includes("portfolio")) {
-    nodes.push(<AgoraPortfolioWidget key="portfolio" workspace={workspace} />);
-  }
-  if (tab.includes("x402") && !tab.includes("portfolio")) {
-    nodes.push(<AgoraX402Widget key="x402" workspace={workspace} />);
-  }
-  if (tab.includes("circle")) {
+  if (tab.includes("start") || tab.includes("overview")) {
+    nodes.push(<ArcControlStartWidget key="control-start" workspace={workspace} />);
+  } else if (tab.includes("budget")) {
+    nodes.push(<ArcControlBudgetWidget key="control-budget" workspace={workspace} />);
+  } else if (tab.includes("strateg")) {
+    nodes.push(<ArcControlStrategiesWidget key="control-strategies" workspace={workspace} />);
+  } else if (tab.includes("source")) {
+    nodes.push(<ArcControlSourcesWidget key="control-sources" workspace={workspace} />);
+  } else if (tab.includes("decision")) {
+    nodes.push(<ArcControlDecisionRoomWidget key="control-decision" workspace={workspace} />);
+  } else if (tab.includes("execution")) {
+    nodes.push(<ArcControlExecutionWidget key="control-execution" workspace={workspace} />);
+  } else if (tab.includes("position")) {
+    nodes.push(<ArcControlPositionsWidget key="control-positions" workspace={workspace} />);
+  } else if (tab.includes("risk") || tab.includes("guard")) {
+    nodes.push(<ArcControlRiskGuardWidget key="control-risk" workspace={workspace} />);
+  } else if (tab.includes("receipt")) {
+    nodes.push(<ArcControlReceiptsWidget key="control-receipts" workspace={workspace} />);
+  } else if (tab.includes("developer") || tab.includes("app kit") || tab.includes("appkit") || tab.includes("kit") || tab.includes("x402") || tab.includes("circle") || tab.includes("arbitrage") || tab.includes("arb") || tab.includes("engine")) {
     nodes.push(
-      <AgoraCircleToolsWidget key="circle" workspace={workspace} />,
-      <AgoraCctpWidget key="cctp" workspace={workspace} />,
+      <ArcControlDeveloperWidget key="control-developer" workspace={workspace}>
+        <ArcContractsPanel workspace={workspace} />
+        <AgoraEcosystemLinks />
+      </ArcControlDeveloperWidget>,
     );
-  }
-  if (tab.includes("receipt")) {
-    nodes.push(<AgoraLeaderboardWidget key="leaderboard" workspace={workspace} />);
-  }
-  if (tab.includes("copy")) {
-    nodes.push(<ArcMindCopyTradingWidget key="copy" workspace={workspace} />);
-  }
-  if (tab.includes("reasoning") || tab.includes("trace")) {
-    nodes.push(<ArcMindReasoningWidget key="reasoning" workspace={workspace} />);
-  }
-  if (tab.includes("signal") || tab.includes("hub") || tab.includes("decision") || tab.includes("guard")) {
-    nodes.push(
-      <ArcDecisionLogWidget key="declog" />,
-      <div key="pnl-debate" className="widget-card-grid-2">
-        <ArcMindPnLWidget />
-        <ArcMindDebateWidget />
-      </div>,
-      <ArcMindSignalHubWidget key="signal" workspace={workspace} />,
-    );
-  }
-  if (tab.includes("kill")) {
-    nodes.push(<ArcMindKillSwitchWidget key="kill" workspace={workspace} />);
-  }
-  if (tab.includes("swap") || tab.includes("dex")) {
-    nodes.push(<ArcMindSwapWidget key="swap" workspace={workspace} />);
-  }
-  if (tab.includes("usyc") || tab.includes("yield") || tab.includes("risk-off") || tab.includes("vault")) {
-    nodes.push(
-      <ArcMindYieldWidget key="yield" workspace={workspace} />,
-      <ArcMindSwapWidget key="swap-yield" workspace={workspace} />,
-    );
-  }
-  if (tab.includes("app kit") || tab.includes("appkit") || tab.includes("kit")) {
-    nodes.push(<ArcAppKitWidget key="appkit" workspace={workspace} />);
   }
 
   return nodes.length > 0 ? <>{nodes}</> : null;
 }
 
-// ── Agent extra (none for agora) ───────────────────────────────────────────────
+// в”Ђв”Ђ Agent extra (none for agora) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 export function renderAgentExtra(_workspace: Workspace): ReactNode | null {
   return null;
 }
 
-// ── Arc Deployed Contracts panel ───────────────────────────────────────────────
+// в”Ђв”Ђ Arc Deployed Contracts panel в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 function ArcContractsPanel({ workspace }: { workspace: Workspace }) {
   const { mode } = useNetworkMode("agora");
   const cfg = getAgoraConfig(mode);
@@ -210,7 +158,7 @@ function ArcContractsPanel({ workspace }: { workspace: Workspace }) {
               rep {reputation}
             </span>
           )}
-          <span style={{ fontSize: ".62rem", color: "#1652F0", fontWeight: 700, background: "#1652F018", padding: "2px 7px", borderRadius: 5 }}>Arc L1 testnet · chainId 5042002</span>
+          <span style={{ fontSize: ".62rem", color: "#1652F0", fontWeight: 700, background: "#1652F018", padding: "2px 7px", borderRadius: 5 }}>Arc L1 testnet В· chainId 5042002</span>
         </div>
       </div>
       {CONTRACTS.map((c) => (
@@ -223,7 +171,7 @@ function ArcContractsPanel({ workspace }: { workspace: Workspace }) {
           {c.addr ? (
             <a href={`${cfg.explorerBase}/address/${c.addr}`} target="_blank" rel="noreferrer"
               style={{ fontSize: ".6rem", fontWeight: 700, color: "#1652F0", fontFamily: "monospace", textDecoration: "none", whiteSpace: "nowrap" }}>
-              {c.addr.slice(0, 10)}…↗
+              {c.addr.slice(0, 10)}вЂ¦в†—
             </a>
           ) : (
             <span style={{ fontSize: ".6rem", color: "var(--muted)" }}>not configured</span>
@@ -231,7 +179,7 @@ function ArcContractsPanel({ workspace }: { workspace: Workspace }) {
         </div>
       ))}
       <div style={{ padding: "8px 16px", fontSize: ".62rem", color: "var(--muted)" }}>
-        Arc Testnet only · no Arc mainnet is exposed in this hackathon build
+        Arc Testnet only В· no Arc mainnet is exposed
       </div>
     </div>
   );
@@ -240,23 +188,25 @@ function ArcContractsPanel({ workspace }: { workspace: Workspace }) {
 function AgoraEcosystemLinks() {
   const groups = [
     { title: "Explorer", items: [{ label: "Arc Testnet Explorer", url: "https://testnet.arcscan.app" }] },
-    { title: "Faucet", items: [{ label: "Circle Faucet", url: "https://faucet.circle.com" }] },
-    { title: "Dev", items: [
-      { label: "Arc Docs", url: "https://docs.arc.io" },
+    { title: "Funds", items: [{ label: "Circle Faucet", url: "https://faucet.circle.com" }] },
+    { title: "Safety", items: [
+      { label: "Arc Docs", url: "https://docs.arc.network" },
+      { label: "Circle Developer Docs", url: "https://developers.circle.com" },
+    ] },
+    { title: "Advanced", items: [
       { label: "Arc Node Docs", url: "https://arc-node.thecanteenapp.com" },
       { label: "Circle CCTP", url: "https://developers.circle.com/cctp" },
     ] },
-    { title: "Hackathon", items: [{ label: "Agora Agents", url: "https://agora.thecanteenapp.com" }] },
   ];
-  return <EcosystemLinksPanel groups={groups} network="Arc Testnet · chainId 5042002" accent="#F59E0B" />;
+  return <EcosystemLinksPanel groups={groups} network="Arc Testnet В· chainId 5042002" accent="#F59E0B" />;
 }
 
-// ── Live traction strip ────────────────────────────────────────────────────────
+// в”Ђв”Ђ Live traction strip в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 const SERVER_URL = (import.meta.env as Record<string, string | undefined>)["VITE_SERVER_URL"] ?? "";
 
 const LOOP_INTERVAL_MS = 30 * 60 * 1000; // 30 min
 
-// ── Beat the Agent game ───────────────────────────────────────────────────────
+// в”Ђв”Ђ Beat the Agent game в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 interface BeatGuess { decisionTs: string; guess: "BUY" | "SELL" | "HOLD"; correct: boolean | null }
 
@@ -319,14 +269,14 @@ function BeatTheAgentWidget() {
     <div style={{ background: "var(--bg-2)", borderRadius: 14, border: "1px solid var(--line-2)", padding: "16px 18px", marginTop: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <span style={{ fontSize: ".65rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".07em", color: "var(--muted)" }}>Beat the Agent</span>
-        {streak >= 3 && <span style={{ fontSize: ".6rem", padding: "1px 6px", borderRadius: 4, background: "#F59E0B22", color: "#F59E0B", fontWeight: 700 }}>🔥 {streak} streak</span>}
+        {streak >= 3 && <span style={{ fontSize: ".6rem", padding: "1px 6px", borderRadius: 4, background: "#F59E0B22", color: "#F59E0B", fontWeight: 700 }}>рџ”Ґ {streak} streak</span>}
         {total > 0 && <span style={{ marginLeft: "auto", fontSize: ".62rem", color: "var(--muted)" }}>{wins}/{total} correct</span>}
       </div>
 
       <div style={{ fontSize: ".72rem", color: "var(--muted)", marginBottom: 10 }}>
         {alreadyGuessed
           ? pending
-            ? <>Your guess: <b style={{ color: pending.guess === "BUY" ? "#10B981" : pending.guess === "SELL" ? "#EF4444" : "#F59E0B" }}>{pending.guess}</b> · Waiting for next decision in <b style={{ fontVariantNumeric: "tabular-nums" }}>{mm}:{ss}</b></>
+            ? <>Your guess: <b style={{ color: pending.guess === "BUY" ? "#10B981" : pending.guess === "SELL" ? "#EF4444" : "#F59E0B" }}>{pending.guess}</b> В· Waiting for next decision in <b style={{ fontVariantNumeric: "tabular-nums" }}>{mm}:{ss}</b></>
             : <>Waiting for next round in <b style={{ fontVariantNumeric: "tabular-nums" }}>{mm}:{ss}</b></>
           : <>What will ArcMind signal next? Decides in <b style={{ fontVariantNumeric: "tabular-nums" }}>{mm}:{ss}</b></>
         }
@@ -351,7 +301,7 @@ function BeatTheAgentWidget() {
           {guesses.slice(0, 5).map((g, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: ".65rem" }}>
               <span style={{ color: g.correct === true ? "#10B981" : g.correct === false ? "#EF4444" : "#F59E0B", fontWeight: 700 }}>
-                {g.correct === true ? "✓" : g.correct === false ? "✗" : "?"}
+                {g.correct === true ? "вњ“" : g.correct === false ? "вњ—" : "?"}
               </span>
               <span style={{ color: "var(--muted)" }}>You: <b style={{ color: "var(--ink)" }}>{g.guess}</b></span>
               {g.correct !== null && <span style={{ color: "var(--muted)", marginLeft: "auto" }}>{new Date(g.decisionTs).toLocaleTimeString()}</span>}
@@ -417,7 +367,7 @@ function ArcMindCountdown() {
         {lastDecision && (
           <div style={{ fontSize: ".62rem", color: "var(--muted)" }}>
             Last: <span style={{ color: decColor, fontWeight: 700 }}>{lastDecision.decision}</span>
-            {lastDecision.ethPrice ? <span> · ETH ${lastDecision.ethPrice.toLocaleString()}</span> : null}
+            {lastDecision.ethPrice ? <span> В· ETH ${lastDecision.ethPrice.toLocaleString()}</span> : null}
           </div>
         )}
       </div>
@@ -428,7 +378,7 @@ function ArcMindCountdown() {
   );
 }
 
-// ── Price alerts ───────────────────────────────────────────────────────────────
+// в”Ђв”Ђ Price alerts в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 interface PriceAlert { id: string; asset: string; dir: "above" | "below"; price: number; triggered: boolean }
 
 function PriceAlertWidget() {
@@ -445,7 +395,7 @@ function PriceAlertWidget() {
       const hit = a.dir === "above" ? ethPrice >= a.price : ethPrice <= a.price;
       if (hit && perm === "granted") {
         new Notification("ArcMind Price Alert", {
-          body: `ETH is ${a.dir} $${a.price.toLocaleString()} — now at $${ethPrice.toLocaleString()}`,
+          body: `ETH is ${a.dir} $${a.price.toLocaleString()} вЂ” now at $${ethPrice.toLocaleString()}`,
           icon: "/logos/arc.png",
         });
         return { ...a, triggered: true };
@@ -506,7 +456,7 @@ function PriceAlertWidget() {
               <span style={{ fontSize: ".65rem", color: "#64748b" }}>{a.asset}</span>
               <span style={{ fontSize: ".68rem", fontWeight: 600, color: a.dir === "above" ? "#10b981" : "#ef4444" }}>{a.dir}</span>
               <span style={{ fontSize: ".68rem", color: "#e2e8f0" }}>${a.price.toLocaleString()}</span>
-              {a.triggered && <span style={{ fontSize: ".6rem", color: "#10b981", marginLeft: 4 }}>✓ triggered</span>}
+              {a.triggered && <span style={{ fontSize: ".6rem", color: "#10b981", marginLeft: 4 }}>вњ“ triggered</span>}
               <button onClick={() => setAlerts((prev: PriceAlert[]) => prev.filter((x: PriceAlert) => x.id !== a.id))} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#475569", lineHeight: 0, padding: 2 }}>
                 <Trash2 size={10} />
               </button>
@@ -514,7 +464,7 @@ function PriceAlertWidget() {
           ))}
         </div>
       )}
-      {alerts.length === 0 && <p style={{ fontSize: ".65rem", color: "#475569", textAlign: "center", margin: "4px 0 0" }}>No alerts set — add one above</p>}
+      {alerts.length === 0 && <p style={{ fontSize: ".65rem", color: "#475569", textAlign: "center", margin: "4px 0 0" }}>No alerts set вЂ” add one above</p>}
     </div>
   );
 }
@@ -544,7 +494,7 @@ function NotificationBell() {
         if (latest.ts !== lastSeenRef.current) {
           lastSeenRef.current = latest.ts;
           new Notification("ArcMind Signal", {
-            body: `${latest.decision} ETH at $${latest.ethPrice?.toLocaleString() ?? "??"} — new on-chain decision`,
+            body: `${latest.decision} ETH at $${latest.ethPrice?.toLocaleString() ?? "??"} вЂ” new on-chain decision`,
             icon: "/logos/arc.png",
           });
         }
@@ -617,16 +567,16 @@ function ArcMindTractionStrip() {
   function shareOnX() {
     const dec = lastDecision;
     const text = dec
-      ? `ArcMind just signaled ${dec.decision} ETH at $${dec.ethPrice?.toLocaleString() ?? "??"} — autonomous trading agent on @ArcL1. ${decisions} on-chain decisions. Copy-trade with $1 USDC. #ArcMind #DeFi #AI`
-      : `ArcMind: autonomous trading agent on Arc L1 — ${decisions} on-chain decisions, $${volumeUsd.toFixed(0)} volume. #ArcMind #DeFi`;
+      ? `ArcMind just signaled ${dec.decision} ETH at $${dec.ethPrice?.toLocaleString() ?? "??"} вЂ” autonomous trading agent on @ArcL1. ${decisions} on-chain decisions. Copy-trade with $1 USDC. #ArcMind #DeFi #AI`
+      : `ArcMind: autonomous trading agent on Arc L1 вЂ” ${decisions} on-chain decisions, $${volumeUsd.toFixed(0)} volume. #ArcMind #DeFi`;
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
   }
 
   const stats = [
-    { label: "On-chain decisions", value: animDecisions.toString(), accent: "#8b5cf6", icon: "⛓", sub: "Arc L1", bar: Math.min(animDecisions / 50, 1) },
-    { label: "Traces sold", value: animTraces.toString(), accent: "#6366f1", icon: "🧠", sub: "$0.01 each", bar: Math.min(animTraces / 20, 1) },
-    { label: "USDC volume", value: `$${(animVolume / 100).toFixed(2)}`, accent: "#22c55e", icon: "💰", sub: "Circle USDC", bar: Math.min((animVolume / 100) / 100, 1) },
-    { label: "Agent uptime", value: uptimeDays > 0 ? `${uptimeDays}d` : "live", accent: "#f59e0b", icon: "⏱", sub: "continuous", bar: Math.min(uptimeDays / 30, 1) },
+    { label: "On-chain decisions", value: animDecisions.toString(), accent: "#8b5cf6", icon: "в›“", sub: "Arc L1", bar: Math.min(animDecisions / 50, 1) },
+    { label: "Traces sold", value: animTraces.toString(), accent: "#6366f1", icon: "рџ§ ", sub: "$0.01 each", bar: Math.min(animTraces / 20, 1) },
+    { label: "USDC volume", value: `$${(animVolume / 100).toFixed(2)}`, accent: "#22c55e", icon: "рџ’°", sub: "Circle USDC", bar: Math.min((animVolume / 100) / 100, 1) },
+    { label: "Agent uptime", value: uptimeDays > 0 ? `${uptimeDays}d` : "live", accent: "#f59e0b", icon: "вЏ±", sub: "continuous", bar: Math.min(uptimeDays / 30, 1) },
   ];
 
   return (
@@ -642,7 +592,7 @@ function ArcMindTractionStrip() {
         {lastDecision && (
           <span style={{ marginLeft: "auto", fontSize: ".6rem", color: "var(--muted)" }}>
             Last: <span style={{ fontWeight: 700, color: lastDecision.decision === "BUY" ? "#10b981" : lastDecision.decision === "SELL" ? "#ef4444" : "#f59e0b" }}>{lastDecision.decision}</span>
-            {lastDecision.ethPrice ? ` · ETH $${lastDecision.ethPrice.toLocaleString()}` : ""}
+            {lastDecision.ethPrice ? ` В· ETH $${lastDecision.ethPrice.toLocaleString()}` : ""}
           </span>
         )}
       </div>
@@ -668,7 +618,7 @@ function ArcMindTractionStrip() {
         </button>
         <a href="/live" target="_blank" rel="noreferrer"
           style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "1px solid var(--line-2)", background: "var(--bg-2)", color: "var(--muted)", fontSize: ".72rem", fontWeight: 700, textDecoration: "none" }}>
-          Watch Live ↗
+          Watch Live в†—
         </a>
         <NotificationBell />
       </div>
@@ -677,7 +627,7 @@ function ArcMindTractionStrip() {
   );
 }
 
-// ── CountUp ────────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ CountUp в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 function useCountUp(target: number, duration = 800) {
   const [displayed, setDisplayed] = useState(target);
   const rafRef = useRef<number | null>(null);
@@ -706,14 +656,14 @@ function useCountUp(target: number, duration = 800) {
   return displayed;
 }
 
-// ── Onboarding tour ────────────────────────────────────────────────────────────
+// в”Ђв”Ђ Onboarding tour в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 const TOUR_KEY = "arcmind-tour-v1-done";
 const TOUR_STEPS = [
-  { emoji: "⚡", title: "Welcome to ArcMind", body: "ArcMind is an autonomous AI trading agent on Arc L1. It reads Hyperliquid OI, ETH price, and funding rates — then records a BUY, SELL, or HOLD decision on-chain every 30 minutes. No human clicks." },
-  { emoji: "📡", title: "Decision Guard", body: "The Decision Guard shows ArcMind's live market analysis. See the reasoning behind each decision — ETH price, open interest, funding rate — and watch the countdown to the next signal." },
-  { emoji: "🧠", title: "Reasoning Proofs", body: "Reasoning Proofs show the source trail behind each decision. Paid unlocks use x402 when available; local fallback traces are marked and do not claim live settlement." },
-  { emoji: "🤝", title: "Copy Strategy", body: "Copy Strategy follows ArcMind's ETH/USDC decisions, not a hidden trader. Pause blocks new exposure; withdraw settles the visible session back toward USDC." },
-  { emoji: "🛡️", title: "Kill Switch", body: "Set your personal drawdown threshold. ArcMind monitors live ETH price vs. your entry. If the loss hits your limit, it triggers an on-chain kill signal. The agent is accountable — or it's gone." },
+  { emoji: "вљЎ", title: "Welcome to ArcMind", body: "ArcMind is an autonomous AI trading agent on Arc L1. It reads Hyperliquid OI, ETH price, and funding rates вЂ” then records a BUY, SELL, or HOLD decision on-chain every 30 minutes. No human clicks." },
+  { emoji: "рџ“Ў", title: "Decision Guard", body: "The Decision Guard shows ArcMind's live market analysis. See the reasoning behind each decision вЂ” ETH price, open interest, funding rate вЂ” and watch the countdown to the next signal." },
+  { emoji: "рџ§ ", title: "Reasoning Proofs", body: "Reasoning Proofs show the source trail behind each decision. Paid unlocks require a live wallet or service path; unavailable paths stay blocked." },
+  { emoji: "рџ¤ќ", title: "Copy Strategy", body: "Copy Strategy follows ArcMind's ETH/USDC decisions, not a hidden trader. Pause blocks new exposure; withdraw settles the visible session back toward USDC." },
+  { emoji: "рџ›ЎпёЏ", title: "Kill Switch", body: "Set your personal drawdown threshold. ArcMind monitors live ETH price vs. your entry. If the loss hits your limit, it triggers an on-chain kill signal. The agent is accountable вЂ” or it's gone." },
 ];
 
 function OnboardingTour() {
@@ -745,7 +695,7 @@ function OnboardingTour() {
             onClick={() => { if (isLast) setDone(true); else setStep(s => s + 1); }}
             style={{ flex: 2, padding: "9px 0", borderRadius: 10, border: "none", background: "#8b5cf6", color: "#fff", fontSize: ".82rem", fontWeight: 700, cursor: "pointer" }}
           >
-            {isLast ? "Get Started →" : "Next →"}
+            {isLast ? "Get Started в†’" : "Next в†’"}
           </button>
         </div>
       </div>
@@ -753,7 +703,7 @@ function OnboardingTour() {
   );
 }
 
-// ── Active Channels panel ──────────────────────────────────────────────────────
+// в”Ђв”Ђ Active Channels panel в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 function ActiveChannelsWidget() {
   const [ethPrice, setEthPrice] = useState<number>(0);
 
@@ -765,10 +715,10 @@ function ActiveChannelsWidget() {
   }, []);
 
   const channels = [
-    { icon: "📡", label: "Hyperliquid OI", status: "live" as const, detail: "" },
-    { icon: "📈", label: "CoinGecko ETH/USD", status: "live" as const, detail: ethPrice > 0 ? `$${ethPrice.toLocaleString()}` : "" },
-    { icon: "🗳️", label: "Polymarket", status: "pending" as const, detail: "" },
-    { icon: "⛓️", label: "Arc L1 Registry", status: "live" as const, detail: "" },
+    { icon: "рџ“Ў", label: "Hyperliquid OI", status: "live" as const, detail: "" },
+    { icon: "рџ“€", label: "CoinGecko ETH/USD", status: "live" as const, detail: ethPrice > 0 ? `$${ethPrice.toLocaleString()}` : "" },
+    { icon: "рџ—іпёЏ", label: "Polymarket", status: "pending" as const, detail: "" },
+    { icon: "в›“пёЏ", label: "Arc L1 Registry", status: "live" as const, detail: "" },
   ];
 
   return (
@@ -791,7 +741,7 @@ function ActiveChannelsWidget() {
   );
 }
 
-// ── Revenue Mini-Dashboard ────────────────────────────────────────────────────
+// в”Ђв”Ђ Revenue Mini-Dashboard в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 function ArcRevenueWidget() {
   const [tracesSold, setTracesSold] = useState(0);
@@ -824,10 +774,10 @@ function ArcRevenueWidget() {
   const traceFees = parseFloat((tracesSold * 0.01).toFixed(2));
   const perfFees = parseFloat((stakeCount * 0.05).toFixed(2));
   const items = [
-    { label: "Traces sold", value: String(tracesSold), sub: `$${traceFees.toFixed(2)} revenue`, color: "#8b5cf6", icon: "🧠" },
-    { label: "Copy-trade stakes", value: String(stakeCount), sub: `$${perfFees.toFixed(2)} perf fees`, color: "#1652F0", icon: "👥" },
-    { label: "USDC earned", value: `$${(traceFees + perfFees + totalUsdc).toFixed(2)}`, sub: "via x402 + escrow", color: "#22c55e", icon: "💵" },
-    { label: "30d projection", value: `$${((traceFees + perfFees + totalUsdc) * 30).toFixed(0)}`, sub: "at current rate", color: "#f59e0b", icon: "📈" },
+    { label: "Traces sold", value: String(tracesSold), sub: `$${traceFees.toFixed(2)} revenue`, color: "#8b5cf6", icon: "рџ§ " },
+    { label: "Copy-trade stakes", value: String(stakeCount), sub: `$${perfFees.toFixed(2)} perf fees`, color: "#1652F0", icon: "рџ‘Ґ" },
+    { label: "USDC earned", value: `$${(traceFees + perfFees + totalUsdc).toFixed(2)}`, sub: "via x402 + escrow", color: "#22c55e", icon: "рџ’µ" },
+    { label: "30d projection", value: `$${((traceFees + perfFees + totalUsdc) * 30).toFixed(0)}`, sub: "at current rate", color: "#f59e0b", icon: "рџ“€" },
   ];
 
   return (
@@ -847,22 +797,42 @@ function ArcRevenueWidget() {
   );
 }
 
-// ── Overview extra ─────────────────────────────────────────────────────────────
+// в”Ђв”Ђ Overview extra в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 export function renderOverviewExtra(
   workspace: Workspace,
-  _onGoTab: (t: string) => boolean,
+  onGoTab: (t: string) => boolean,
   _onGoReceipts: () => void,
 ): ReactNode | null {
   return (
     <>
-      <OnboardingTour />
-      <ArcMindCountdown />
-      <ActiveChannelsWidget />
-      <BeatTheAgentWidget />
-      <ArcMindTractionStrip />
-      <ArcRevenueWidget />
+      <ArcControlStartWidget workspace={workspace} onGoTab={onGoTab} />
       <ArcContractsPanel workspace={workspace} />
       <AgoraEcosystemLinks />
     </>
   );
 }
+
+// ── Tab metadata ──────────────────────────────────────────────────────────────
+export function tabMeta(tab: string): TabMeta | null {
+  const t = tab.toLowerCase();
+  if (t.includes("signal") || t.includes("hub") || t.includes("decision") || t.includes("guard"))
+    return { title: "Decision Guard", sub: "Live market sources, debate, PnL and decision logs for HOLD, REDUCE or ALLOW actions on Arc.", intent: "RFB 02 / 03", proof: "sourced signals + Arc receipts" };
+  if (t.includes("reasoning") || t.includes("trace"))
+    return { title: "Reasoning trace marketplace", sub: "Inspect the evidence, confidence shift and source contribution behind each agent decision.", intent: "RFB 06", proof: "trace hash + paid unlock" };
+  if (t.includes("copy"))
+    return { title: "Copy ArcMind strategy", sub: "Start, pause, withdraw and settle a copy session from ArcMind's ETH/USDC decisions. No backtest fee is charged here.", intent: "RFB 06", proof: "copy controls + risk rules" };
+  if (t.includes("kill"))
+    return { title: "Autonomous risk kill switch", sub: "Configure drawdown, liquidation and source-divergence protections before the agent keeps trading.", intent: "RFB 01", proof: "Telegram + Arc action trail" };
+  if (t.includes("usyc") || t.includes("yield") || t.includes("swap") || t.includes("risk-off") || t.includes("vault"))
+    return { title: "Risk-off capital router", sub: "Move idle capital between USDC, USYC and swap routes when the agent detects hostile conditions.", intent: "RFB 04", proof: "USDC denominated settlement" };
+  if (t.includes("arbitrage") || t.includes("arb") || t.includes("engine"))
+    return { title: "Cross-platform arbitrage route", sub: "Detect price gaps, choose route, estimate slippage and show the CCTP/Gateway path before execution.", intent: "RFB 05", proof: "route + receipt" };
+  if (t.includes("portfolio"))
+    return { title: "Adaptive portfolio manager", sub: "Detect market regime, rebalance exposure and park capital in risk-off assets when needed.", intent: "RFB 04", proof: "allocation plan" };
+  if (t.includes("circle") || t.includes("x402") || t.includes("kit") || t.includes("merchant"))
+    return { title: "Circle and Arc tool console", sub: "Use App Kit, CCTP, Gateway, x402 and nanopayment flows as the product's settlement layer.", intent: "Circle stack", proof: "USDC payments on Arc" };
+  if (t.includes("receipt"))
+    return { title: "Arc settlement ledger", sub: "Review paid agent actions and receipts that prove which product flows actually settled.", intent: "Proof layer", proof: "receipt history" };
+  return null;
+}
+

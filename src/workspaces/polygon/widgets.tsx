@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
-import type { SigBlock, CardDef, CardCtx } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
 import { Bolt, Link as LinkIco, Send, Robot, Shield, Receipt as RIco } from "../../icons402";
 import { useNetworkMode } from "../../hooks/useNetworkMode";
 import { EcosystemLinksPanel } from "../../components/ui/EcosystemLinksPanel";
+import { TreasuryPanel } from "./TreasuryPanel";
+import { POLY_FUNDING_SCOPE, POLY_TREASURY_TOPUP_USD } from "./funding";
 import {
   PolygonTradeFinanceWidget,
   PolygonUsdcPaymentsWidget,
@@ -90,12 +92,14 @@ export function renderTab(
 ): ReactNode | null {
   const nodes: ReactNode[] = [];
   if (t.includes("merchant") || t.includes("mode")) {
+    nodes.push(<div key="merchant-treasury" style={{ marginBottom: 14 }}><TreasuryPanel scope={POLY_FUNDING_SCOPE} label="Merchant automation treasury" defaultTopUpUsd={POLY_TREASURY_TOPUP_USD} /></div>);
     nodes.push(<PolygonMerchantOnboardingWidget key="merchant" workspace={workspace} />);
   }
   if (t.includes("trade") || t.includes("finance")) {
     nodes.push(<PolygonTradeFinanceWidget key="trade" workspace={workspace} />);
   }
   if (t.includes("marketplace") || t.includes("agent")) {
+    nodes.push(<div key="marketplace-treasury" style={{ marginBottom: 14 }}><TreasuryPanel scope={POLY_FUNDING_SCOPE} label="Merchant bot autonomous calls" defaultTopUpUsd={POLY_TREASURY_TOPUP_USD} /></div>);
     nodes.push(<PolygonAgentMarketplaceWidget key="marketplace" workspace={workspace} />);
   }
   if (t.includes("usdc") || t.includes("payment") || t.includes("remittance")) {
@@ -133,4 +137,22 @@ export function renderOverviewExtra(
   _onGoReceipts: () => void,
 ): ReactNode | null {
   return <PolygonEcosystemLinks />;
+}
+
+// ── Tab metadata ──────────────────────────────────────────────────────────────
+export function tabMeta(tab: string): TabMeta | null {
+  const t = tab.toLowerCase();
+  if (t.includes("merchant") || t.includes("mode"))
+    return { title: "Merchant Mode onboarding", sub: "Guide a merchant from setup to first payment with Polygon-native settlement.", intent: "Merchant", proof: "onboarding state" };
+  if (t.includes("trade") || t.includes("finance"))
+    return { title: "Trade finance desk", sub: "Model invoices, financing and payment status for cross-border business flows.", intent: "Trade finance", proof: "invoice state" };
+  if (t.includes("marketplace") || t.includes("agent"))
+    return { title: "Agent marketplace", sub: "Browse paid agent services and inspect payment/reputation before calling them.", intent: "Marketplace", proof: "service profile" };
+  if (t.includes("usdc") || t.includes("payment") || t.includes("remittance"))
+    return { title: "USDC remittance flow", sub: "Send and track low-cost USDC payments with user-readable status.", intent: "Payments", proof: "payment receipt" };
+  if (t.includes("overview"))
+    return { title: "Polygon operating dashboard", sub: "See workspace-level traction, payments and agent activity without endpoint clutter.", intent: "Overview", proof: "live metrics" };
+  if (t.includes("receipt"))
+    return { title: "Polygon receipt ledger", sub: "Review settled Polygon payments and keep the proof trail clear for users.", intent: "Receipts", proof: "settlement list" };
+  return null;
 }

@@ -31,7 +31,7 @@ import { useLocalStore } from "../../lib/storage";
 import { deterministicScore, hashId } from "../../lib/util-hash";
 import { makeTxHash } from "../../data";
 import type { Receipt, Service, Workspace } from "../../types";
-import type { SigBlock, CardDef, CardCtx } from "../_types";
+import type { SigBlock, CardDef, CardCtx, TabMeta } from "../_types";
 
 // ---------------------------------------------------------------------------
 // Re-exports from widget sub-files (also imported into scope for renderTab)
@@ -41,6 +41,8 @@ import { QieCreditWidget } from "./widgets/QieCreditWidget";
 import { QieOracleFeedWidget } from "./widgets/QieOracleFeedWidget";
 import { QieSubscriptionWidget } from "./widgets/QieSubscriptionWidget";
 import { QieWalletConnectPanel } from "./widgets/QieWalletConnectPanel";
+import { TreasuryPanel } from "./TreasuryPanel";
+import { QIE_FUNDING_SCOPE, QIE_TREASURY_TOPUP_USD } from "./funding";
 
 export { QiePosWidget, GameItemShop, MerchantPayoutsPanel, QieCheckoutPhoneMockup };
 export { QieCreditWidget };
@@ -829,6 +831,44 @@ export function AgentWalletConsole({ workspace }: { workspace: Workspace }) {
 }
 
 // ---------------------------------------------------------------------------
+// QieMerchantTreasury — signed Agent Treasury allowance for the merchant bot
+// ---------------------------------------------------------------------------
+//
+// The QIE Merchant Bot (agent_qie_merchant_bot) spends only this signed
+// treasury allowance for its autonomous paid flows: POS endpoint provisioning
+// (svc_qie_pos), merchant payouts (svc_qie_payout), subscription charges and
+// the credit borrow-and-pay leg (svc_qie_checkout). Without a signed allowance
+// every one of those flows is blocked by checkFunding before it can charge.
+//
+// `treasuryEpoch` is bumped on each successful top-up so the panel re-mounts
+// and reflects the new balance (mirrors 0g's OgAgentToAgentLoop pattern).
+export function QieMerchantTreasury() {
+  const [treasuryEpoch, setTreasuryEpoch] = useState(0);
+  return (
+    <div className="panel block svc-flavor">
+      <div className="block-head">
+        <div className="ttl">
+          <span className="sq soft"><Bot width={15} height={15} /></span>
+          <div>
+            <h3>Merchant Bot Treasury</h3>
+            <div className="sub">sign an allowance so the QIE Merchant Bot can run autonomous paid flows · payouts · POS · subscriptions</div>
+          </div>
+        </div>
+      </div>
+      <div style={{ padding: "0 16px 16px" }}>
+        <TreasuryPanel
+          key={treasuryEpoch}
+          scope={QIE_FUNDING_SCOPE}
+          label="QIE Merchant Bot autonomous payments"
+          defaultTopUpUsd={QIE_TREASURY_TOPUP_USD}
+          onTreasuryChange={() => setTreasuryEpoch((e) => e + 1)}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // signature — workspace stats table shown in the overview
 // ---------------------------------------------------------------------------
 
@@ -885,6 +925,7 @@ export function renderTab(
       {(t.includes("social") || t.includes("creator")) && <QieCreatorSubscriptions workspace={ws} />}
       {t.includes("wallet") && <QieWalletConnectPanel />}
       {t.includes("wallet") && <QieWalletDashboard workspace={ws} />}
+      {t.includes("merchant") && <QieMerchantTreasury />}
       {t.includes("merchant") && <MerchantPayoutsPanel workspace={ws} />}
       {t.includes("credit") && <QieCreditWidget workspace={ws} />}
       {t.includes("oracle") && <QieOracleFeedWidget workspace={ws} />}
@@ -959,3 +1000,25 @@ export function renderOverviewExtra(_ws: Workspace): ReactNode {
 // Suppress unused-import warnings for utility functions kept for completeness
 void ago;
 void hashPct;
+
+// ── Tab metadata ──────────────────────────────────────────────────────────────
+export function tabMeta(tab: string): TabMeta | null {
+  const t = tab.toLowerCase();
+  if (t.includes("checkout") || t.includes("merchant"))
+    return { title: "Merchant checkout workspace", sub: "Create payment links, split settlement and track POS requests for real merchants.", intent: "Commerce", proof: "checkout receipt" };
+  if (t.includes("qiedex") || t.includes("dex"))
+    return { title: "QIEDEX swap desk", sub: "Quote swaps, inspect liquidity and execute only after the route is understandable.", intent: "DEX", proof: "quote result" };
+  if (t.includes("gaming") || t.includes("game"))
+    return { title: "Game item economy", sub: "Sell items, route payments and track creator/game receipts inside one flow.", intent: "Gaming", proof: "item receipt" };
+  if (t.includes("social") || t.includes("creator"))
+    return { title: "Creator monetization flow", sub: "Handle tips, subscriptions and social payments with clear settlement state.", intent: "Creator", proof: "subscription/tip" };
+  if (t.includes("wallet"))
+    return { title: "QIE wallet control room", sub: "Review wallet balances, actions and agent spending from the user's perspective.", intent: "Wallet", proof: "wallet activity" };
+  if (t.includes("oracle"))
+    return { title: "Oracle feed workspace", sub: "Inspect feed values, freshness and downstream product impact before agents use them.", intent: "Oracle", proof: "feed freshness" };
+  if (t.includes("credit"))
+    return { title: "Credit decision workspace", sub: "Score credit, preview limits and record decisions as auditable agent actions.", intent: "Credit", proof: "score output" };
+  if (t.includes("pass"))
+    return { title: "QIE Pass identity gate", sub: "Issue access passes and enforce identity-gated commerce without exposing private data.", intent: "Identity", proof: "access proof" };
+  return null;
+}
