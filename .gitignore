@@ -18,14 +18,23 @@ screenshots/
 !public/logotollgate.png
 !public/logo0g.png
 .github/workflows/
+data/*.db-shm
+data/*.db-wal
+data/arc-control-test.db
 
-# All markdown files are local only — only root README is committed
+# markdown — only root README is public
 *.md
 !README.md
-!docs/AGORA-ACTIVE-EXECUTION-PLAN.md
-!docs/AGORA-LIVE-DEMO-RUNBOOK.md
-!docs/AGORA-SUBMISSION-PACK.md
-!docs/AGORA-PRODUCTION-DEPLOYMENT.md
-!docs/AGORA-API-SIGNAL-RADAR.md
+
+# agent / AI tooling (local only)
+.claude/
+.agents/
+.codex/
+skills-lock.json
+
+# e2e / test artifacts
+e2e/
+playwright-report/
+playwright.config.ts
 
 .vercel
