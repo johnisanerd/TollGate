@@ -14,10 +14,38 @@ import {
   OverviewPage,
   type RailKind,
 } from "../components/WorkspaceDashboard";
+import { ArcControlReceiptsWidget } from "../components/widgets/agora/ArcControlWidgets";
+import { ArcMindOverviewWidget } from "../components/widgets/agora/ArcMindOverviewWidget";
+import { ArcDeveloperConsoleWidget } from "../components/widgets/agora/ArcDeveloperConsoleWidget";
+import {
+  ArcMindCopyTradingWidget,
+  ArcMindReasoningWidget,
+} from "../components/widgets/agora/ArcMindWidgets";
 import { slugifyTab } from "../components/ui/AppSidebar";
 import { DocsPage, IntegrationsPage } from "../components/docs";
 import type { WorkspaceOutletContext } from "../layouts/AppLayout";
 import { TabFade } from "../components/ui/Motion";
+import type { Workspace } from "../types";
+
+function AgoraControlTab({
+  workspace,
+  tabLabel,
+  onGoTab,
+}: {
+  workspace: Workspace;
+  tabLabel: string;
+  onGoTab: (tab: string) => boolean;
+}) {
+  const tab = tabLabel.toLowerCase();
+  if (tab === "docs" || tab === "documentation") return <DocsPage workspace={workspace} />;
+  if (tab === "integrations" || tab.includes("integration")) return <IntegrationsPage workspace={workspace} />;
+  if (tab === "overview") return <ArcMindOverviewWidget workspace={workspace} onGoTab={onGoTab} />;
+  if (tab === "signal feed") return <ArcMindReasoningWidget workspace={workspace} />;
+  if (tab === "copy & position") return <ArcMindCopyTradingWidget workspace={workspace} />;
+  if (tab === "receipts") return <ArcControlReceiptsWidget workspace={workspace} />;
+  if (tab === "developer console") return <ArcDeveloperConsoleWidget workspace={workspace} />;
+  return <ArcMindOverviewWidget workspace={workspace} onGoTab={onGoTab} />;
+}
 
 export function WorkspacePage() {
   const params = useParams<{ wsId: string; tabSlug: string }>();
@@ -93,7 +121,9 @@ export function WorkspacePage() {
   return (
     <div className="ap402">
       <TabFade tabKey={`${workspace.id}:${tabLabel}`}>
-      {kind === "overview" ? (
+      {String(workspace.id).trim().toLowerCase() === "agora" ? (
+        <AgoraControlTab workspace={workspace} tabLabel={tabLabel} onGoTab={goTab} />
+      ) : kind === "overview" ? (
         <OverviewPage
           agent={effectiveAgent}
           receipts={receipts}
