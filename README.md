@@ -188,6 +188,16 @@ const stop = await startArcMindAgent({
 | `CopyTradeMarket` | Per-market escrow: stake/settle/killSwitch/pause; immutable fee + drawdown bounds; ERC-8183 Job lifecycle events | [`contracts/contracts/CopyTradeMarket.sol`](contracts/contracts/CopyTradeMarket.sol) |
 | `AgentRegistry` | Multi-agent registry with `AccessControl` (resolver + governor roles), slashing, ERC-8004 view interface | [`contracts/contracts/AgentRegistry.sol`](contracts/contracts/AgentRegistry.sol) |
 
+**Live on Arc Testnet — `npm run deploy:arc-market-factory` 2026-05-23:**
+
+| Contract | Address | Status |
+|---|---|---|
+| `AgentRegistry` | [`0x8aD47542EBbd92696E7C69E756bdf654d867581d`](https://testnet.arcscan.app/address/0x8aD47542EBbd92696E7C69E756bdf654d867581d) | live; `registerAgent` + `recordDecision` + `resolveDecision` all exercised, reputation 0 → 10 |
+| `MarketFactory` | [`0x9C36Aa5fa856893Ae70E33014985678E4Ce198AD`](https://testnet.arcscan.app/address/0x9C36Aa5fa856893Ae70E33014985678E4Ce198AD) | live; `createMarket` exercised; 1 market deployed |
+| `CopyTradeMarket` (ETH/USDC) | [`0xaef1bac4a9660bABCc78304580E1ea67749f0351`](https://testnet.arcscan.app/address/0xaef1bac4a9660bABCc78304580E1ea67749f0351) | live; `stake` + `settle` exercised; JobCreated/Funded/Submitted/Completed all emitted |
+
+9 signed transactions across deploy + 6 function calls — full ERC-8004 + ERC-8183 lifecycle verified on-chain. Reproduce with `npm run verify:arc-deployments` (zero gas), `npm run exercise:arc-agent` (3 real tx), `npm run exercise:arc-market` (3 real tx).
+
 **Legacy Arc Testnet deployment** (still live for the original 12-tab demo flow):
 
 | Contract | Address |
