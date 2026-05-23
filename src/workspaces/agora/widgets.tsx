@@ -1,5 +1,5 @@
 import { type ReactNode, useState, useEffect, useRef, useCallback } from "react";
-import { TrendingUp, Brain, Copy, Zap, ShieldCheck, Activity, Shield, Clock, Bell, BellOff, AlertTriangle, Plus, Trash2, CircleDollarSign } from "lucide-react";
+import { TrendingUp, Zap, ShieldCheck, Clock, Bell, BellOff, AlertTriangle, Plus, Trash2, CircleDollarSign } from "lucide-react";
 import type { Service, Workspace } from "../../types";
 import type { Receipt } from "../../types";
 import type { SigBlock, CardDef, CardCtx, TabMeta, TabCtx, OverviewCtx } from "../_types";
