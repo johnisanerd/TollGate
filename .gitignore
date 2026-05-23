@@ -22,10 +22,17 @@ data/*.db-shm
 data/*.db-wal
 data/arc-control-test.db
 
-# markdown — root README + per-workspace READMEs are public
+# markdown — only root README is public; all planning docs are private
 *.md
 !README.md
-!src/workspaces/*/README.md
+
+# test / e2e artifacts
+test-results/
+playwright-report/
+
+# local screenshots and codex run artifacts
+.codex-run/
+artifacts/
 
 # agent / AI tooling (local only)
 .claude/
@@ -35,7 +42,6 @@ skills-lock.json
 
 # e2e / test artifacts
 e2e/
-playwright-report/
 playwright.config.ts
 
 .vercel
