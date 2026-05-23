@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Navigate, useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { workspaces, agentFor, services as allServices } from "../data";
 import type { Service, WorkspaceId } from "../types";
 import { useAppState } from "../app-state";
@@ -15,12 +15,10 @@ import {
   type RailKind,
 } from "../components/WorkspaceDashboard";
 import { ArcControlReceiptsWidget } from "../components/widgets/agora/ArcControlWidgets";
-import { ArcMindOverviewWidget } from "../components/widgets/agora/ArcMindOverviewWidget";
 import { ArcDeveloperConsoleWidget } from "../components/widgets/agora/ArcDeveloperConsoleWidget";
-import {
-  ArcMindCopyTradingWidget,
-  ArcMindReasoningWidget,
-} from "../components/widgets/agora/ArcMindWidgets";
+import { ArcMindCopyTradingWidget } from "../components/widgets/agora/ArcMindWidgets";
+import { ArcDiscoverWidget } from "../components/widgets/agora/ArcDiscoverWidget";
+import { ArcAgentDetailWidget } from "../components/widgets/agora/ArcAgentDetailWidget";
 import { slugifyTab } from "../components/ui/AppSidebar";
 import { DocsPage, IntegrationsPage } from "../components/docs";
 import type { WorkspaceOutletContext } from "../layouts/AppLayout";
@@ -36,15 +34,43 @@ function AgoraControlTab({
   tabLabel: string;
   onGoTab: (tab: string) => boolean;
 }) {
+  const navigate = useNavigate();
+  const [search] = useSearchParams();
   const tab = tabLabel.toLowerCase();
+
   if (tab === "docs" || tab === "documentation") return <DocsPage workspace={workspace} />;
   if (tab === "integrations" || tab.includes("integration")) return <IntegrationsPage workspace={workspace} />;
-  if (tab === "overview") return <ArcMindOverviewWidget workspace={workspace} onGoTab={onGoTab} />;
-  if (tab === "signal feed") return <ArcMindReasoningWidget workspace={workspace} />;
+  if (tab === "discover") {
+    return (
+      <ArcDiscoverWidget
+        workspace={workspace}
+        onSelectAgent={(agentId) => navigate(`/app/${workspace.id}/agent?agent=${agentId}`)}
+        onMirror={(_vault) => {
+          alert("Cross-chain mirror via CCTP is coming in Phase 4. For now you can open the vault on hyperliquid.xyz directly.");
+        }}
+      />
+    );
+  }
+  if (tab === "agent") {
+    const agentId = search.get("agent") ?? "arcmind";
+    return (
+      <ArcAgentDetailWidget
+        workspace={workspace}
+        agentId={agentId}
+        onGoTab={onGoTab}
+        onBack={() => navigate(`/app/${workspace.id}/discover`)}
+      />
+    );
+  }
   if (tab === "copy & position") return <ArcMindCopyTradingWidget workspace={workspace} />;
   if (tab === "receipts") return <ArcControlReceiptsWidget workspace={workspace} />;
   if (tab === "developer console") return <ArcDeveloperConsoleWidget workspace={workspace} />;
-  return <ArcMindOverviewWidget workspace={workspace} onGoTab={onGoTab} />;
+  return (
+    <ArcDiscoverWidget
+      workspace={workspace}
+      onSelectAgent={(agentId) => navigate(`/app/${workspace.id}/agent?agent=${agentId}`)}
+    />
+  );
 }
 
 export function WorkspacePage() {
