@@ -22,9 +22,10 @@ data/*.db-shm
 data/*.db-wal
 data/arc-control-test.db
 
-# markdown — only root README is public
+# markdown — root README + per-workspace READMEs are public
 *.md
 !README.md
+!src/workspaces/*/README.md
 
 # agent / AI tooling (local only)
 .claude/
