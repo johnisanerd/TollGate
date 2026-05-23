@@ -1,0 +1,82 @@
+specVersion: 1.0.0
+description: ArcMind — autonomous trading agents on Arc L1 (ERC-8004 + ERC-8183).
+repository: https://github.com/kravadk/arcmind
+schema:
+  file: ./schema.graphql
+
+dataSources:
+  - kind: ethereum
+    name: AgentRegistry
+    network: arc-testnet
+    source:
+      address: "0x8aD47542EBbd92696E7C69E756bdf654d867581d"
+      abi: AgentRegistry
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/agent-registry.ts
+      entities:
+        - Agent
+        - Decision
+        - SlashEvent
+      abis:
+        - name: AgentRegistry
+          file: ./abis/AgentRegistry.json
+      eventHandlers:
+        - event: AgentRegistered(indexed bytes32,indexed bytes32,indexed address,string)
+          handler: handleAgentRegistered
+        - event: DecisionRecorded(indexed bytes32,indexed uint256,bytes32)
+          handler: handleDecisionRecorded
+        - event: DecisionResolved(indexed bytes32,indexed uint256,bytes32,uint256)
+          handler: handleDecisionResolved
+        - event: AgentSlashed(indexed bytes32,indexed uint256,string)
+          handler: handleAgentSlashed
+        - event: ReputationUpdated(indexed bytes32,uint256,uint256)
+          handler: handleReputationUpdated
+
+  - kind: ethereum
+    name: MarketFactory
+    network: arc-testnet
+    source:
+      address: "0x9C36Aa5fa856893Ae70E33014985678E4Ce198AD"
+      abi: MarketFactory
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/market-factory.ts
+      entities:
+        - Market
+      abis:
+        - name: MarketFactory
+          file: ./abis/MarketFactory.json
+      eventHandlers:
+        - event: MarketDeployed(indexed address,indexed address,indexed address,string,address)
+          handler: handleMarketDeployed
+
+templates:
+  - name: CopyTradeMarket
+    kind: ethereum
+    network: arc-testnet
+    source:
+      abi: CopyTradeMarket
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/copy-trade-market.ts
+      entities:
+        - Market
+        - Stake
+        - Settlement
+      abis:
+        - name: CopyTradeMarket
+          file: ./abis/CopyTradeMarket.json
+      eventHandlers:
+        - event: Staked(indexed address,uint256)
+          handler: handleStaked
+        - event: Settled(indexed address,uint256,uint256,int256)
+          handler: handleSettled

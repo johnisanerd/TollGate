@@ -25,6 +25,7 @@ import { ArcPerpTradingWidget } from "../components/widgets/agora/ArcPerpTrading
 import { ArcPredictionsWidget } from "../components/widgets/agora/ArcPredictionsWidget";
 import { ArcTractionWidget } from "../components/widgets/agora/ArcTractionWidget";
 import { ArcSlashLeaderboardWidget } from "../components/widgets/agora/ArcSlashLeaderboardWidget";
+import { IntegrationsStatusWidget } from "../components/widgets/agora/IntegrationsStatusWidget";
 import { AgoraPortfolioWidget } from "../components/widgets/agora/AgoraExtraWidgets";
 import type { VaultSummary } from "../lib/hyperliquid";
 import { slugifyTab } from "../components/ui/AppSidebar";
@@ -48,7 +49,14 @@ function AgoraControlTab({
   const tab = tabLabel.toLowerCase();
 
   if (tab === "docs" || tab === "documentation") return <DocsPage workspace={workspace} />;
-  if (tab === "integrations" || tab.includes("integration")) return <IntegrationsPage workspace={workspace} />;
+  if (tab === "integrations" || tab.includes("integration")) {
+    return (
+      <div style={{ display: "grid", gap: 14 }}>
+        <IntegrationsStatusWidget />
+        <IntegrationsPage workspace={workspace} />
+      </div>
+    );
+  }
   if (tab === "discover") {
     return (
       <>

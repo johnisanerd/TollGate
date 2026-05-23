@@ -1,0 +1,45 @@
+name: arcmind
+version: 0.1.0
+description: |
+  ArcMind — autonomous ETH/USDC trading agent on Arc L1. Composes price,
+  open-interest, and funding-rate signals; returns a BUY / SELL / HOLD
+  decision with a natural-language reasoning trace. ERC-8004 reputation
+  is anchored on Arc Testnet via the AgentRegistry contract.
+
+entrypoint: http
+http:
+  baseUrl: ${ARCMIND_BASE_URL:-https://tollgate-1.onrender.com}
+  endpoints:
+    - id: decide
+      method: GET
+      path: /api/arc-decisions
+      description: Latest ArcMind decisions with reasoning trace.
+    - id: regime
+      method: POST
+      path: /api/llm/route
+      description: Free-form LLM call routed through the ArcMind multi-provider chain.
+      sampleBody: |
+        {
+          "prompt": "Given ETH funding 0.0005 and OI rising 8%, classify the regime.",
+          "system": "You are a crypto market regime classifier. Respond with one of BULL, BEAR, RISK_OFF, CHOPPY and one sentence reasoning."
+        }
+
+tags:
+  - trading
+  - erc-8004
+  - erc-8183
+  - arc-l1
+  - ethereum
+  - copy-trading
+
+permissions:
+  network:
+    - https://tollgate-1.onrender.com
+    - https://testnet.arcscan.app
+    - https://rpc.testnet.arc-node.thecanteenapp.com
+
+notes: |
+  This skill is read-only at the Hermes interface. Real fund movements
+  happen on-chain via signed transactions against the deployed Arc Testnet
+  contracts (MarketFactory + AgentRegistry + CopyTradeMarket). Hermes
+  cannot move funds — it can only fetch ArcMind's view of the market.

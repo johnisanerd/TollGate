@@ -1,0 +1,95 @@
+"""
+ArcMind subgraph schema — indexes ERC-8004 (AgentRegistry) and ERC-8183
+(MarketFactory + CopyTradeMarket) events emitted on Arc L1 testnet.
+"""
+
+type Agent @entity(immutable: false) {
+  id: Bytes!
+  builderId: Bytes!
+  owner: Bytes!
+  metadata: String!
+  reputation: BigInt!
+  decisionCount: BigInt!
+  slashed: Boolean!
+  slashReason: String
+  registeredAt: BigInt!
+  registeredBlock: BigInt!
+  registeredTx: Bytes!
+
+  decisions: [Decision!]! @derivedFrom(field: "agent")
+  slashEvents: [SlashEvent!]! @derivedFrom(field: "agent")
+}
+
+type Decision @entity(immutable: false) {
+  id: ID!
+  agent: Agent!
+  decisionIndex: BigInt!
+  decisionHash: Bytes!
+  outcomeHash: Bytes
+  resolved: Boolean!
+  resolvedAt: BigInt
+  newReputation: BigInt
+  recordedAt: BigInt!
+  recordedTx: Bytes!
+}
+
+type SlashEvent @entity(immutable: true) {
+  id: ID!
+  agent: Agent!
+  decisionIndex: BigInt!
+  reason: String!
+  blockNumber: BigInt!
+  txHash: Bytes!
+  timestamp: BigInt!
+}
+
+type Market @entity(immutable: false) {
+  id: Bytes!
+  operator: Bytes!
+  quoteToken: Bytes!
+  baseSymbol: String!
+  deployedAt: BigInt!
+  deployedBlock: BigInt!
+  deployedTx: Bytes!
+
+  totalStaked: BigInt!
+  totalSettled: BigInt!
+  stakerCount: BigInt!
+  settlementCount: BigInt!
+
+  stakes: [Stake!]! @derivedFrom(field: "market")
+  settlements: [Settlement!]! @derivedFrom(field: "market")
+}
+
+type Stake @entity(immutable: true) {
+  id: ID!
+  market: Market!
+  staker: Bytes!
+  amount: BigInt!
+  blockNumber: BigInt!
+  txHash: Bytes!
+  timestamp: BigInt!
+}
+
+type Settlement @entity(immutable: true) {
+  id: ID!
+  market: Market!
+  staker: Bytes!
+  stake: BigInt!
+  payout: BigInt!
+  pnl: BigInt!
+  blockNumber: BigInt!
+  txHash: Bytes!
+  timestamp: BigInt!
+}
+
+type GlobalStats @entity(immutable: false) {
+  id: ID!
+  totalAgents: BigInt!
+  totalSlashedAgents: BigInt!
+  totalDecisions: BigInt!
+  totalMarkets: BigInt!
+  totalStakedUsdc: BigInt!
+  totalSettlementsCount: BigInt!
+  lastUpdatedBlock: BigInt!
+}
