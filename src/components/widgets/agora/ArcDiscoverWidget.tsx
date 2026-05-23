@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Search, ArrowUpDown, Star, Zap } from "lucide-react";
+import { ExternalLink, Search, ArrowUpDown, Star, Zap, Cpu, Pause as PauseIcon } from "lucide-react";
 import type { Workspace } from "../../../types";
 import {
   getVaultSummaries,
   hyperliquidVaultUrl,
   type VaultSummary,
 } from "../../../lib/hyperliquid";
+import {
+  fetchAllMarkets,
+  fmtUsdc,
+  isMarketFactoryConfigured,
+  type OnChainMarket,
+} from "../../../lib/marketFactory";
+import { arcExplorerAddrUrl } from "../../../lib/agora";
 
 const SERVER = (import.meta.env as Record<string, string | undefined>)["VITE_SERVER_URL"] ?? "";
 
@@ -195,6 +202,7 @@ export function ArcDiscoverWidget({ workspace: _workspace, onSelectAgent, onMirr
 
   return (
     <div style={{ display: "grid", gap: 14 }}>
+      <NativeMarketsSection />
       <div style={{
         background: "linear-gradient(145deg, rgba(8,13,25,0.94), rgba(10,18,32,0.82))",
         border: "1px solid rgba(96,165,250,0.20)",
@@ -366,5 +374,114 @@ function ThSort({ label, k, sortKey, sortDir, onClick }: { label: string; k: Sor
         {active && <span style={{ fontSize: 8 }}>{sortDir === "desc" ? "↓" : "↑"}</span>}
       </button>
     </th>
+  );
+}
+
+// ─── On-chain native markets (from MarketFactory) ─────────────────────────────
+
+function NativeMarketsSection() {
+  const [markets, setMarkets] = useState<OnChainMarket[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const configured = isMarketFactoryConfigured();
+
+  useEffect(() => {
+    let mounted = true;
+    if (!configured) { setLoading(false); return; }
+    fetchAllMarkets().then((data) => {
+      if (mounted) { setMarkets(data); setLoading(false); }
+    });
+    return () => { mounted = false; };
+  }, [configured]);
+
+  if (!configured) return null;
+
+  return (
+    <div style={{
+      background: "linear-gradient(145deg, rgba(34,197,94,0.06), rgba(8,13,25,0.92))",
+      border: "1px solid rgba(34,197,94,0.22)",
+      borderRadius: 18,
+      padding: 18,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <div style={{ width: 38, height: 38, borderRadius: 11, background: "rgba(34,197,94,0.18)", display: "grid", placeItems: "center" }}>
+          <Cpu size={18} style={{ color: "#22c55e" }} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <h2 style={{ margin: 0, color: "#fff", fontSize: ".95rem", fontWeight: 800 }}>Native Arc Markets — on-chain</h2>
+          <p style={{ margin: "3px 0 0", color: "#9fb0c8", fontSize: ".72rem" }}>
+            CopyTradeMarket instances deployed by MarketFactory. Each market lives in its own contract with its own pause switch, fee schedule, and per-trader stake bounds.
+          </p>
+        </div>
+        <span style={{ fontSize: ".62rem", color: "#94a3b8" }}>{loading ? "loading…" : `${markets?.length ?? 0} markets`}</span>
+      </div>
+
+      {!loading && markets && markets.length === 0 && (
+        <div style={{ padding: "10px 14px", color: "#94a3b8", fontSize: ".72rem", background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 9 }}>
+          MarketFactory is configured but contains no markets yet. Deploy the first one with{" "}
+          <code style={{ color: "#cbd5e1" }}>npm run deploy:arc-market-factory</code>.
+        </div>
+      )}
+
+      {!loading && markets && markets.length > 0 && (
+        <div style={{ overflowX: "auto", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".75rem" }}>
+            <thead>
+              <tr style={{ background: "rgba(34,197,94,0.06)" }}>
+                <th style={thStyle()}>Symbol</th>
+                <th style={thStyle()}>Market</th>
+                <th style={thStyle()}>Operator</th>
+                <th style={thStyle()}>TVL</th>
+                <th style={thStyle()}>Fees paid</th>
+                <th style={thStyle()}>Settlements</th>
+                <th style={thStyle()}>Fee / Kill</th>
+                <th style={thStyle()}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {markets.map((m) => (
+                <tr key={m.address} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                  <td style={tdStyle()}>
+                    <span style={{ fontWeight: 800, color: "#fff" }}>{m.baseSymbol}</span>
+                  </td>
+                  <td style={tdStyle()}>
+                    <a href={arcExplorerAddrUrl(m.address)} target="_blank" rel="noreferrer"
+                       style={{ color: "#22c55e", textDecoration: "none", fontFamily: "monospace", fontSize: ".68rem", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      {m.address.slice(0, 8)}…{m.address.slice(-4)} <ExternalLink size={10} />
+                    </a>
+                  </td>
+                  <td style={tdStyle()}>
+                    <a href={arcExplorerAddrUrl(m.operator)} target="_blank" rel="noreferrer"
+                       style={{ color: "#94a3b8", textDecoration: "none", fontFamily: "monospace", fontSize: ".66rem" }}>
+                      {m.operator.slice(0, 6)}…{m.operator.slice(-4)}
+                    </a>
+                  </td>
+                  <td style={{ ...tdStyle(), fontVariantNumeric: "tabular-nums" }}>{fmtUsdc(m.totalStaked)}</td>
+                  <td style={{ ...tdStyle(), fontVariantNumeric: "tabular-nums", color: "#f59e0b" }}>{fmtUsdc(m.totalFeesPaid)}</td>
+                  <td style={{ ...tdStyle(), fontVariantNumeric: "tabular-nums" }}>{m.settlementCount}</td>
+                  <td style={{ ...tdStyle(), fontVariantNumeric: "tabular-nums", fontSize: ".68rem" }}>
+                    {(m.performanceFeeBps / 100).toFixed(1)}% / {(m.killThresholdBps / 100).toFixed(0)}%
+                  </td>
+                  <td style={tdStyle()}>
+                    {m.paused ? (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: ".62rem", fontWeight: 700, color: "#fb7185", background: "rgba(251,113,133,0.10)", padding: "3px 7px", borderRadius: 5 }}>
+                        <PauseIcon size={10} /> paused
+                      </span>
+                    ) : (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: ".62rem", fontWeight: 700, color: "#22c55e", background: "rgba(34,197,94,0.10)", padding: "3px 7px", borderRadius: 5 }}>
+                        <Zap size={10} /> live
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div style={{ marginTop: 10, fontSize: ".62rem", color: "#64748b" }}>
+        Data: MarketFactory.getMarketsPaged() · Arc L1 RPC · live on every page load · each row clicks to ArcScan
+      </div>
+    </div>
   );
 }

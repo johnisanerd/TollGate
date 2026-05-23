@@ -18,12 +18,16 @@
     "upload:0g": "node scripts/og-upload.cjs",
     "deploy:qie": "hardhat run scripts/deploy-qie.cjs --network qieTestnet",
     "deploy:arc": "hardhat run scripts/deploy-arc.cjs --network arcTestnet",
+    "deploy:arc-control": "hardhat run scripts/deploy-arc-control.cjs --network arcTestnet",
+    "deploy:arc-market-factory": "hardhat run scripts/deploy-market-factory.cjs --network arcTestnet",
     "deploy:polygon": "hardhat run scripts/deploy-polygon.cjs --network polygonMainnet",
     "deploy:polygon-cardona": "hardhat run scripts/deploy-polygon.cjs --network polygonCardona"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.2",
     "@nomicfoundation/hardhat-ethers": "^3.0.8",
     "@openzeppelin/contracts": "5.0.2",
+    "chai": "^4.5.0",
     "dotenv": "^16.4.5",
     "ethers": "^6.13.0",
     "hardhat": "^2.22.10"

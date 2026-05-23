@@ -5,6 +5,7 @@
  * which is git-ignored.
  */
 require("@nomicfoundation/hardhat-ethers");
+require("@nomicfoundation/hardhat-chai-matchers");
 require("dotenv").config();
 
 const {
