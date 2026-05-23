@@ -48,6 +48,39 @@ contract CopyTradeEscrow {
     event KillSwitchTriggered(address indexed trader, uint256 drawdownBps, uint256 ts);
     event GlobalKillSwitch(uint256 ts, string reason);
 
+    // ── ERC-8183 (Agentic Commerce) standard events ─────────────────────────
+    //
+    // Each copy-trade position is modelled as a Job in ERC-8183 terms:
+    //   client    = trader (user staking USDC)
+    //   provider  = operator (ArcMind agent address)
+    //   evaluator = operator (settlement is operator-attested)
+    //   budget    = staked USDC amount
+    //
+    // Job state machine: Open → Funded → Submitted → Terminal.
+    // stake() transitions to Funded immediately (open + funded in one tx).
+    // settle()/killSwitch()/global halt emit JobSubmitted + JobCompleted.
+
+    /// @notice ERC-8183 — emitted when a new Job is created.
+    event JobCreated(
+        bytes32 indexed jobId,
+        address indexed client,
+        address indexed provider,
+        address evaluator,
+        uint256 budget,
+        uint256 ts
+    );
+
+    /// @notice ERC-8183 — emitted when the Job is funded (escrow received budget).
+    event JobFunded(bytes32 indexed jobId, uint256 amount, uint256 ts);
+
+    /// @notice ERC-8183 — emitted when the provider submits work for evaluation.
+    /// @param outcome  keccak256 of an outcome blob, or a packed status code.
+    event JobSubmitted(bytes32 indexed jobId, bytes32 outcome, uint256 ts);
+
+    /// @notice ERC-8183 — emitted when the Job reaches terminal state.
+    /// @param reason   bytes32 packed reason: "settled" | "kill_switch" | "global_halt"
+    event JobCompleted(bytes32 indexed jobId, bytes32 reason, uint256 ts);
+
     error AlreadyStaked(address trader);
     error NoPosition(address trader);
     error NotOperator(address caller);
@@ -91,6 +124,11 @@ contract CopyTradeEscrow {
 
         totalStaked += amount;
         emit Staked(msg.sender, amount, block.timestamp);
+
+        // ERC-8183 lifecycle: Open + Funded in the same tx.
+        bytes32 jobId = _computeJobId(msg.sender, block.timestamp);
+        emit JobCreated(jobId, msg.sender, operator, operator, amount, block.timestamp);
+        emit JobFunded(jobId, amount, block.timestamp);
     }
 
     /// @notice Settle a position with realised PnL. Only operator (ArcMind) can call.
@@ -128,6 +166,13 @@ contract CopyTradeEscrow {
         }));
 
         totalSettled += gross;
+
+        // ERC-8183 lifecycle: Submitted + Completed in the same tx.
+        bytes32 jobId = _computeJobId(trader, pos.entryTs);
+        bytes32 outcome = keccak256(abi.encode(pnlUsdc, gross, fee));
+        emit JobSubmitted(jobId, outcome, block.timestamp);
+        emit JobCompleted(jobId, bytes32("settled"), block.timestamp);
+
         delete _positions[trader];
         emit Settled(trader, pnlUsdc, gross, fee);
     }
@@ -146,6 +191,12 @@ contract CopyTradeEscrow {
             bool ok = IERC20(usdc).transfer(trader, remaining);
             if (!ok) revert TransferFailed();
         }
+
+        // ERC-8183 lifecycle: Submitted (with kill-switch outcome) + Completed.
+        bytes32 jobId = _computeJobId(trader, pos.entryTs);
+        bytes32 outcome = keccak256(abi.encode(uint256(0xDEAD), drawdownBps, remaining));
+        emit JobSubmitted(jobId, outcome, block.timestamp);
+        emit JobCompleted(jobId, bytes32("kill_switch"), block.timestamp);
 
         delete _positions[trader];
         emit KillSwitchTriggered(trader, drawdownBps, block.timestamp);
@@ -167,5 +218,21 @@ contract CopyTradeEscrow {
 
     function getSettlement(uint256 index) external view returns (SettlementRecord memory) {
         return _settlements[index];
+    }
+
+    // ── ERC-8183 helpers ─────────────────────────────────────────────────────
+
+    /// @notice Deterministic ERC-8183 Job id for a trader's currently-open position.
+    /// @dev    keccak256(client || entryTs || escrow). Two consecutive positions
+    ///         by the same trader produce different jobIds because entryTs differs.
+    ///         Returns 0x0 when the trader has no open position.
+    function jobIdOf(address trader) public view returns (bytes32) {
+        uint256 entryTs = _positions[trader].entryTs;
+        if (entryTs == 0) return bytes32(0);
+        return _computeJobId(trader, entryTs);
+    }
+
+    function _computeJobId(address client, uint256 entryTs) internal view returns (bytes32) {
+        return keccak256(abi.encodePacked(client, entryTs, address(this)));
     }
 }

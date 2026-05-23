@@ -24,6 +24,7 @@ import {
 import type { Workspace } from "../../../types";
 import { useAppState } from "../../../app-state";
 import { getAgoraConfig } from "../../../lib/agora";
+import { JobLifecycleViewer } from "./JobLifecycleViewer";
 import {
   buildActionDisclosure,
   buildControlSnapshot,
@@ -1382,6 +1383,12 @@ export function ArcControlReceiptsWidget({ workspace }: { workspace: Workspace }
         a.click();
         URL.revokeObjectURL(url);
       }}><Download size={15} /> Export CSV</ActionButton>} />
+
+      {/* ERC-8183 Job lifecycle (on-chain reader) */}
+      <div style={{ marginBottom: 14 }}>
+        <JobLifecycleViewer />
+      </div>
+
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         {["all", "live", "blocked", "failed"].map((item) => (
           <button key={item} onClick={() => setFilter(item)} style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 999, padding: "7px 10px", background: filter === item ? "rgba(22,82,240,0.35)" : "rgba(255,255,255,0.05)", color: "#e2e8f0", cursor: "pointer", fontWeight: 800, fontSize: 12 }}>{item}</button>

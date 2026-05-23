@@ -1,7 +1,6 @@
 /* Agora / Arc L1 on-chain glue for the frontend.
  *
- * Arc L1 mainnet is NOT YET LIVE — both "mainnet" and "testnet" modes use the same
- * testnet chain (chainId 5042002). Switching is cosmetic for now; addresses are the same.
+ * Arc L1 testnet (chainId 5042002) is the only network — no mainnet exists.
  *
  * Deployed contracts (arcTestnet.json):
  *   ArcMindRegistry:   VITE_ARC_REGISTRY_ADDRESS
@@ -35,17 +34,14 @@ export type AgoraConfig = {
   escrowAddress: string | null;
   explorerBase: string;
   chainHex: string;
-  mainnetLive: false; // Arc mainnet not yet live
 };
 
 export function getAgoraConfig(_mode?: NetworkMode): AgoraConfig {
-  // Arc mainnet not live — always return testnet config regardless of mode
   return {
     registryAddress: env("VITE_ARC_REGISTRY_ADDRESS") ?? null,
     escrowAddress:   env("VITE_ARC_ESCROW_ADDRESS") ?? null,
     explorerBase:    (env("VITE_ARC_EXPLORER") ?? "https://testnet.arcscan.app").replace(/\/+$/, ""),
     chainHex: ARC_CHAIN_HEX,
-    mainnetLive: false,
   };
 }
 
@@ -76,6 +72,11 @@ const REGISTRY_ABI = [
 const ESCROW_ABI = [
   "function stake(uint256 amount) external",
   "function totalStaked() view returns (uint256)",
+  "function jobIdOf(address trader) view returns (bytes32)",
+  "event JobCreated(bytes32 indexed jobId, address indexed client, address indexed provider, address evaluator, uint256 budget, uint256 ts)",
+  "event JobFunded(bytes32 indexed jobId, uint256 amount, uint256 ts)",
+  "event JobSubmitted(bytes32 indexed jobId, bytes32 outcome, uint256 ts)",
+  "event JobCompleted(bytes32 indexed jobId, bytes32 reason, uint256 ts)",
 ];
 
 const ERC20_ABI = [
@@ -208,6 +209,146 @@ export async function resolveArcDecision(index: number, outcome: string): Promis
   const tx = await registry.resolveDecision(index, outcomeHash);
   const receipt = await tx.wait() as { hash: string };
   return { txHash: receipt.hash };
+}
+
+// ── ERC-8183 Job lifecycle reader ─────────────────────────────────────────────
+
+export type JobState = "Open" | "Funded" | "Submitted" | "Terminal";
+
+export interface JobLifecycleEntry {
+  jobId: string;
+  state: JobState;
+  client: string;
+  provider: string;
+  evaluator: string;
+  budget: string;       // USDC, formatted as decimal string (6 decimals → display)
+  createdAt: number;    // unix ms
+  fundedAt?: number;
+  submittedAt?: number;
+  completedAt?: number;
+  outcome?: string;
+  reason?: string;
+  txHashes: {
+    created?: string;
+    funded?: string;
+    submitted?: string;
+    completed?: string;
+  };
+}
+
+const ARC_RPC_FALLBACK = "https://rpc.testnet.arc-node.thecanteenapp.com/v1/public";
+const ESCROW_DEPLOY_BLOCK_FALLBACK = 0; // safe default; backend can override later
+
+interface RawLog {
+  fragment?: { name?: string };
+  args?: Record<string | number, unknown>;
+  blockNumber?: number;
+  transactionHash?: string;
+}
+
+interface EthersBlockMin { timestamp: number }
+
+/**
+ * Read ERC-8183 lifecycle events for `userAddress` from CopyTradeEscrow.
+ * Returns most-recent-first list of Jobs with their state progression and tx hashes.
+ *
+ * Reads via the Arc public RPC. Returns [] when escrow address is not configured,
+ * RPC is down, or the address has no Jobs.
+ */
+export async function fetchEscrowJobLifecycle(userAddress: string): Promise<JobLifecycleEntry[]> {
+  const cfg = getAgoraConfig();
+  if (!cfg.escrowAddress) return [];
+  if (!/^0x[a-fA-F0-9]{40}$/.test(userAddress)) return [];
+
+  try {
+    const rpcUrl = env("VITE_ARC_RPC_URL") ?? ARC_RPC_FALLBACK;
+    const provider = new JsonRpcProvider(rpcUrl);
+    const escrow = new Contract(cfg.escrowAddress, ESCROW_ABI, provider);
+
+    const userLower = userAddress.toLowerCase();
+    const fromBlock = ESCROW_DEPLOY_BLOCK_FALLBACK;
+
+    // JobCreated has 3 indexed topics: jobId, client, provider. Filter by client.
+    const createdFilter = escrow.filters.JobCreated(null, userAddress);
+    const createdLogs = await escrow.queryFilter(createdFilter, fromBlock) as unknown as RawLog[];
+
+    const jobs: JobLifecycleEntry[] = [];
+    const blockCache = new Map<number, number>(); // blockNumber → ts (sec)
+
+    async function blockTs(num: number | undefined): Promise<number> {
+      if (typeof num !== "number") return 0;
+      const cached = blockCache.get(num);
+      if (cached !== undefined) return cached;
+      const block = await provider.getBlock(num) as EthersBlockMin | null;
+      const ts = block?.timestamp ?? 0;
+      blockCache.set(num, ts);
+      return ts;
+    }
+
+    for (const log of createdLogs) {
+      const args = log.args ?? {};
+      const jobId = String(args["jobId"] ?? args[0]);
+      if (!jobId || jobId === "0x") continue;
+      const provider_ = String(args["provider"] ?? args[2]);
+      const evaluator = String(args["evaluator"] ?? args[3]);
+      const budget = String(args["budget"] ?? args[4]);
+      const createdTs = await blockTs(log.blockNumber);
+
+      const fundedLogs = await escrow.queryFilter(escrow.filters.JobFunded(jobId), fromBlock) as unknown as RawLog[];
+      const submittedLogs = await escrow.queryFilter(escrow.filters.JobSubmitted(jobId), fromBlock) as unknown as RawLog[];
+      const completedLogs = await escrow.queryFilter(escrow.filters.JobCompleted(jobId), fromBlock) as unknown as RawLog[];
+
+      const fundedLog = fundedLogs[0];
+      const submittedLog = submittedLogs[0];
+      const completedLog = completedLogs[0];
+
+      let state: JobState = "Open";
+      if (completedLog) state = "Terminal";
+      else if (submittedLog) state = "Submitted";
+      else if (fundedLog) state = "Funded";
+
+      jobs.push({
+        jobId,
+        state,
+        client: userAddress,
+        provider: provider_,
+        evaluator,
+        budget,
+        createdAt: createdTs * 1000,
+        fundedAt: fundedLog ? (await blockTs(fundedLog.blockNumber)) * 1000 : undefined,
+        submittedAt: submittedLog ? (await blockTs(submittedLog.blockNumber)) * 1000 : undefined,
+        completedAt: completedLog ? (await blockTs(completedLog.blockNumber)) * 1000 : undefined,
+        outcome: submittedLog ? String(submittedLog.args?.["outcome"] ?? "") : undefined,
+        reason: completedLog ? decodeReason(String(completedLog.args?.["reason"] ?? "")) : undefined,
+        txHashes: {
+          created: log.transactionHash,
+          funded: fundedLog?.transactionHash,
+          submitted: submittedLog?.transactionHash,
+          completed: completedLog?.transactionHash,
+        },
+      });
+    }
+
+    // Most recent first
+    jobs.sort((a, b) => b.createdAt - a.createdAt);
+    return jobs;
+  } catch {
+    return [];
+  }
+}
+
+/** Decode bytes32-packed ERC-8183 reason string ("settled", "kill_switch", "global_halt"). */
+function decodeReason(hex: string): string {
+  if (!hex || hex === "0x") return "";
+  try {
+    // strip trailing zeros and decode as UTF-8
+    const clean = hex.replace(/^0x/, "").replace(/(00)+$/, "");
+    if (clean.length === 0) return "";
+    const bytes = new Uint8Array(clean.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return hex;
+  }
 }
 
 export async function getArcAgentStats(agentId: string): Promise<{ reputation: number } | null> {

@@ -58,6 +58,18 @@ contract ArcMindRegistry {
         uint256 newReputation
     );
 
+    // ── ERC-8004 standard events (additive — no breaking changes) ────────────
+
+    /// @notice ERC-8004: emitted whenever an agent's reputation score changes.
+    /// @param agentId   The agent whose reputation was updated.
+    /// @param oldScore  Reputation value before the change.
+    /// @param newScore  Reputation value after the change.
+    event ReputationUpdated(
+        bytes32 indexed agentId,
+        uint256 oldScore,
+        uint256 newScore
+    );
+
     // ── Errors ─────────────────────────────────────────────────────────────────
 
     error BuilderIdAlreadyRegistered(bytes32 builderId);
@@ -137,9 +149,11 @@ contract ArcMindRegistry {
 
         d.outcomeHash = outcomeHash;
         d.resolved    = true;
-        agent.reputation += 10;
+        uint256 oldReputation = agent.reputation;
+        agent.reputation     = oldReputation + 10;
 
         emit DecisionResolved(d.agentId, index, outcomeHash, agent.reputation);
+        emit ReputationUpdated(d.agentId, oldReputation, agent.reputation);
     }
 
     // ── Views ──────────────────────────────────────────────────────────────────
@@ -167,5 +181,36 @@ contract ArcMindRegistry {
 
     function agentIdForBuilder(bytes32 builderId) external view returns (bytes32) {
         return _builderToAgent[builderId];
+    }
+
+    // ── ERC-8004 standard view interface (additive shim) ─────────────────────
+    //
+    // These mirror legacy getters under the names defined in EIP-8004 so any
+    // off-chain indexer or wallet that targets the standard works against
+    // ArcMindRegistry unmodified.
+
+    /// @notice ERC-8004 — canonical metadata URI for an agent.
+    /// @param agentId  keccak256(builderId).
+    /// @return uri     Off-chain metadata pointer (IPFS, HTTPS, or JSON string).
+    function agentURI(bytes32 agentId) external view returns (string memory uri) {
+        AgentInfo storage agent = _agents[agentId];
+        if (agent.owner == address(0)) revert AgentNotFound(agentId);
+        return agent.metadata;
+    }
+
+    /// @notice ERC-8004 — current reputation score for an agent.
+    function agentReputation(bytes32 agentId) external view returns (uint256) {
+        return _agents[agentId].reputation;
+    }
+
+    /// @notice ERC-8004 — registered owner address for an agent. Returns
+    ///         address(0) when the agent is unknown (callers MUST check).
+    function agentOwner(bytes32 agentId) external view returns (address) {
+        return _agents[agentId].owner;
+    }
+
+    /// @notice ERC-8004 — total number of decisions recorded by an agent.
+    function agentDecisionCount(bytes32 agentId) external view returns (uint256) {
+        return _agents[agentId].decisions;
     }
 }
