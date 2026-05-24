@@ -1058,6 +1058,8 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
   }
 
   return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <ArcNewsPanel />
     <div className="rounded-xl border border-indigo-500/20 bg-indigo-950/20 p-5 space-y-4">
       <div className="flex items-center gap-2">
         <Brain className="w-5 h-5 text-indigo-400" />
@@ -1221,6 +1223,7 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }
@@ -2216,6 +2219,72 @@ export function ArcMindDebateWidget() {
           Click "Run Debate" to see Bullish vs Bearish agents argue using live Hyperliquid OI + ETH price.
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Apify news panel ────────────────────────────────────────────────────────
+
+const NEWS_SERVER = (import.meta.env as Record<string, string | undefined>)["VITE_SERVER_URL"] ?? "";
+
+interface NewsItem { title: string; url: string; source: string; publishedAt: string; summary?: string }
+
+export function ArcNewsPanel() {
+  const [items, setItems] = useState<NewsItem[]>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch(`${NEWS_SERVER}/api/apify/news?limit=8`, { signal: AbortSignal.timeout(15_000) });
+        if (!res.ok) { if (!cancelled) setStatus("unavailable"); return; }
+        const d = await res.json() as { ok: boolean; items: NewsItem[]; reason?: string };
+        if (cancelled) return;
+        if (!d.ok || !d.items.length) { setStatus("unavailable"); return; }
+        setItems(d.items);
+        setStatus("ready");
+      } catch { if (!cancelled) setStatus("unavailable"); }
+    }
+    void load();
+    const id = setInterval(load, 120_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  if (status === "loading") {
+    return (
+      <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(8,13,25,0.7)", border: "1px solid rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: ".72rem" }}>
+        Loading Apify crypto news…
+      </div>
+    );
+  }
+
+  if (status === "unavailable" || !items.length) {
+    return (
+      <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: ".72rem" }}>
+        Apify news unavailable — set <code>APIFY_TOKEN</code> on the server for live crypto news signal.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <div style={{ fontSize: ".62rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".07em", color: "#94a3b8" }}>
+        📰 Live crypto news · Apify signal
+      </div>
+      {items.map((item, i) => (
+        <a key={i} href={item.url} target="_blank" rel="noreferrer"
+          style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, padding: "10px 12px", borderRadius: 10, background: "rgba(8,13,25,0.8)", border: "1px solid rgba(255,255,255,0.06)", textDecoration: "none", color: "inherit" }}>
+          <div>
+            <div style={{ fontSize: ".78rem", fontWeight: 600, color: "#e2e8f0", lineHeight: 1.3 }}>{item.title}</div>
+            {item.summary && <div style={{ fontSize: ".65rem", color: "#94a3b8", marginTop: 3, lineHeight: 1.4 }}>{item.summary.slice(0, 120)}{item.summary.length > 120 ? "…" : ""}</div>}
+            <div style={{ fontSize: ".58rem", color: "#64748b", marginTop: 4 }}>
+              {item.source}{item.publishedAt ? ` · ${new Date(item.publishedAt).toLocaleDateString()}` : ""}
+            </div>
+          </div>
+          <div style={{ color: "#60a5fa", fontSize: ".7rem", flexShrink: 0 }}>↗</div>
+        </a>
+      ))}
     </div>
   );
 }
