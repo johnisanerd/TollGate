@@ -16,6 +16,7 @@ import { appendReceipt } from "./store.js";
 import { dispatchAlert } from "./alerts.js";
 import { postCast, isFarcasterConfigured } from "./farcaster.js";
 import { routeLlmCall } from "./llm.js";
+import { recordPolymarketIntent } from "./polymarket-exec.js";
 
 const ARC_RPC = process.env.ARC_RPC_URL ?? "https://rpc.testnet.arc-node.thecanteenapp.com/v1/public";
 const ARC_KEY = process.env.ARC_PRIVATE_KEY ?? "";
@@ -149,6 +150,7 @@ export type ArcAgentLoopStatus = {
   regime?: MarketRegime;
   regimeSource?: "rule" | "llm";
   degradation?: DegradationState;
+  polymarketIntent?: PolyIntentSummary;
 };
 
 type LeaderSourceStatus = "configured" | "missing" | "unavailable";
@@ -379,6 +381,114 @@ async function pinTraceJson(payload: unknown, decisionHash: string): Promise<{ p
   }
 }
 
+/* ─── Polymarket Kelly intent ────────────────────────────────────────── */
+
+const POLY_BANKROLL_USDC = Number(process.env["PREDICTION_BANKROLL_USDC"] ?? 20);
+
+interface PolyIntentSummary {
+  betDecision: "BET_YES" | "BET_NO" | "PASS";
+  stakeUsdc: number;
+  reason: string;
+  intentId?: string;
+  marketSlug?: string;
+}
+
+function computeKellyBet(
+  marketPrice: number,
+  fairProb: number,
+  bankrollUsdc: number,
+): { stakeUsdc: number; betYes: boolean; kellyFrac: number } {
+  const MIN_EDGE = 0.05;
+  const MAX_BET = 5;
+  const KELLY_MULT = 0.5;
+  const yesEdge = fairProb - marketPrice;
+  if (Math.abs(yesEdge) < MIN_EDGE) return { stakeUsdc: 0, betYes: yesEdge >= 0, kellyFrac: 0 };
+  const betYes = yesEdge > 0;
+  const price = betYes ? marketPrice : 1 - marketPrice;
+  const fair = betYes ? fairProb : 1 - fairProb;
+  const b = 1 / price - 1;
+  const kellyFrac = Math.max(0, (b * fair - (1 - fair)) / b);
+  const stakeUsdc = Math.min(kellyFrac * bankrollUsdc * KELLY_MULT, MAX_BET);
+  return { stakeUsdc, betYes, kellyFrac };
+}
+
+export const __testingPolyIntent = { computeKellyBet };
+
+async function fetchTopPolymarketCryptoMarket(): Promise<{ tokenId: string; marketPrice: number; marketSlug?: string } | null> {
+  try {
+    const res = await fetch(
+      "https://gamma-api.polymarket.com/markets?tag=crypto&limit=8&active=true&closed=false&order=volume24hr&ascending=false",
+      { signal: AbortSignal.timeout(8_000), headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as unknown;
+    const markets = Array.isArray(data) ? data : [];
+    for (const m of markets) {
+      if (!m || typeof m !== "object") continue;
+      const r = m as Record<string, unknown>;
+      const prices = Array.isArray(r["outcomePrices"]) ? r["outcomePrices"].map(Number) : [];
+      const p = prices[0] ?? NaN;
+      if (!Number.isFinite(p) || p < 0.05 || p > 0.95) continue;
+      let tokenId = "";
+      const rawIds = r["clobTokenIds"];
+      if (typeof rawIds === "string") {
+        try {
+          const parsed = JSON.parse(rawIds) as string[];
+          tokenId = Array.isArray(parsed) ? (String(parsed[0] ?? "")) : rawIds;
+        } catch {
+          tokenId = rawIds.replace(/[\[\]"\s]/g, "").split(",")[0] ?? "";
+        }
+      } else if (Array.isArray(rawIds)) {
+        tokenId = String(rawIds[0] ?? "");
+      }
+      if (!tokenId || !/^[0-9]{1,80}$/.test(tokenId)) continue;
+      return {
+        tokenId,
+        marketPrice: p as number,
+        marketSlug: typeof r["slug"] === "string" ? r["slug"] : undefined,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function maybeRecordPolymarketIntent(
+  decision: "BUY" | "SELL" | "HOLD",
+  regime: MarketRegime,
+): Promise<PolyIntentSummary | null> {
+  if (decision === "HOLD" && regime !== "BULL") return null;
+  const mkt = await fetchTopPolymarketCryptoMarket();
+  if (!mkt) return null;
+  const bias = decision === "BUY" ? 0.07 : decision === "SELL" ? -0.07 : 0.03;
+  const fairProb = Math.max(0.02, Math.min(0.98, mkt.marketPrice + bias));
+  const { stakeUsdc, betYes, kellyFrac } = computeKellyBet(mkt.marketPrice, fairProb, POLY_BANKROLL_USDC);
+  const absEdge = Math.abs(fairProb - mkt.marketPrice);
+  if (stakeUsdc < 0.5) {
+    return {
+      betDecision: "PASS",
+      stakeUsdc: 0,
+      reason: absEdge < 0.05 ? "edge_below_min_5pp" : "stake_under_half_dollar",
+      marketSlug: mkt.marketSlug,
+    };
+  }
+  const result = await recordPolymarketIntent({
+    tokenId: mkt.tokenId,
+    side: "BUY",
+    sizeUsdc: Number(stakeUsdc.toFixed(2)),
+    price: mkt.marketPrice,
+    marketSlug: mkt.marketSlug,
+  });
+  return {
+    betDecision: betYes ? "BET_YES" : "BET_NO",
+    stakeUsdc: Number(stakeUsdc.toFixed(2)),
+    reason: `${(absEdge * 100).toFixed(1)}pp edge, kelly=${(kellyFrac * 100).toFixed(1)}%, $${stakeUsdc.toFixed(2)}`,
+    intentId: result.intentId,
+    marketSlug: mkt.marketSlug,
+  };
+}
+
 async function sendDecisionAlert(input: { action: string; risk?: number; decisionHash: string; txHash?: string | null; leaderSource: LeaderSource }): Promise<void> {
   if (input.action === "ALLOW_COPY" || input.action === "HOLD_USDC") return;
   const body = [
@@ -451,6 +561,7 @@ export async function arcAgentLoop(): Promise<void> {
 
   const decision = makeDecision(ethPrice, hlOI, regime);
   prevEthPrice = ethPrice;
+  const polyIntent = await maybeRecordPolymarketIntent(decision, regime);
   const copyGuardSignals: CopyGuardSignals = {
     ethPrice,
     ethPriceChangePct,
@@ -484,6 +595,7 @@ export async function arcAgentLoop(): Promise<void> {
     regimeSource,
     regimeReasoning,
     degradation,
+    ...(polyIntent ? { polymarketIntent: polyIntent } : {}),
   };
   const decisionHash = "0x" + sha256Hex(JSON.stringify(payload));
   const traceStorage = await pinTraceJson({ ...payload, decisionHash }, decisionHash);
@@ -496,6 +608,7 @@ export async function arcAgentLoop(): Promise<void> {
     regime,
     regimeSource,
     degradation,
+    ...(polyIntent ? { polymarketIntent: polyIntent } : {}),
     message: "Decision payload built.",
   };
 

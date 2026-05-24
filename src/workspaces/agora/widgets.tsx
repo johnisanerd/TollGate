@@ -15,6 +15,12 @@ import {
   ArcMindReasoningWidget,
 } from "../../components/widgets/agora/ArcMindWidgets";
 import { ArcControlReceiptsWidget } from "../../components/widgets/agora/ArcControlWidgets";
+import { ArcDiscoverWidget } from "../../components/widgets/agora/ArcDiscoverWidget";
+import { ArcAgentDetailWidget } from "../../components/widgets/agora/ArcAgentDetailWidget";
+import { ArbScannerWidget } from "../../components/widgets/agora/ArbScannerWidget";
+import { ArcPerpTradingWidget } from "../../components/widgets/agora/ArcPerpTradingWidget";
+import { ArcPredictionsWidget } from "../../components/widgets/agora/ArcPredictionsWidget";
+import { AgoraLeaderboardWidget, AgoraPortfolioWidget } from "../../components/widgets/agora/AgoraExtraWidgets";
 
 // в”Ђв”Ђ Re-exports (kept for backward compat) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 // в”Ђв”Ђ Signature block в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
@@ -53,8 +59,15 @@ type TabRenderer = (ctx: TabCtx) => ReactNode;
 
 const TAB_MAP: Record<string, TabRenderer> = {
   "overview": (ctx) => <ArcMindOverviewWidget workspace={ctx.workspace} onGoTab={ctx.onGoTab} />,
+  "discover": (ctx) => <ArcDiscoverWidget workspace={ctx.workspace} />,
+  "agent": (ctx) => <ArcAgentDetailWidget workspace={ctx.workspace} onGoTab={ctx.onGoTab} />,
   "signal feed": (ctx) => <ArcMindReasoningWidget workspace={ctx.workspace} />,
   "copy & position": (ctx) => <ArcMindCopyTradingWidget workspace={ctx.workspace} />,
+  "arb scanner": (ctx) => <ArbScannerWidget workspace={ctx.workspace} />,
+  "perp trading": (ctx) => <ArcPerpTradingWidget workspace={ctx.workspace} />,
+  "predictions": (ctx) => <ArcPredictionsWidget workspace={ctx.workspace} />,
+  "leaderboard": (ctx) => <AgoraLeaderboardWidget workspace={ctx.workspace} />,
+  "portfolio": (ctx) => <AgoraPortfolioWidget workspace={ctx.workspace} />,
   "receipts": (ctx) => <ArcControlReceiptsWidget workspace={ctx.workspace} />,
   "developer console": (ctx) => <ArcDeveloperConsoleWidget workspace={ctx.workspace} />,
 };
