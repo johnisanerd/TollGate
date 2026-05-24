@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowLeftRight, Moon, RefreshCw, Settings, Sun, X } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, RefreshCw, Settings, X } from "lucide-react";
 import { SettingsPanel } from "./SettingsPanel";
-import { NotificationCenter } from "./NotificationCenter";
 import { WhatsNew } from "./WhatsNew";
 import type { Workspace } from "../../types";
 import { agentFor } from "../../data";
@@ -181,7 +180,6 @@ export function AppSidebar({ workspace, onClose }: AppSidebarProps) {
   const railItems = buildRail(workspace);
   const agent = agentFor(workspace.id);
   const w = useWallet();
-  const { theme, toggleTheme } = useAppState();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const grouped = SECTIONS.map((sec) => ({
@@ -233,6 +231,15 @@ export function AppSidebar({ workspace, onClose }: AppSidebarProps) {
             </div>
             <span className="text-[10px] text-text-muted uppercase tracking-wider truncate">TollGate · x402</span>
           </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="Settings"
+          title="Settings"
+          className="shrink-0 w-7 h-7 grid place-items-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
+        >
+          <Settings className="w-3.5 h-3.5" />
         </button>
         {onClose && (
           <button
@@ -339,36 +346,17 @@ export function AppSidebar({ workspace, onClose }: AppSidebarProps) {
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => navigate("/")}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-bold text-text-secondary hover:text-primary hover:bg-surface-2 transition-colors uppercase tracking-wider"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-bold text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors uppercase tracking-wider"
           >
             <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
             All
           </button>
           <div className="flex-1" />
           <WhatsNew />
-          <NotificationCenter />
-          <button
-            type="button"
-            onClick={toggleTheme}
-            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            title={theme === "dark" ? "Light theme" : "Dark theme"}
-            className="btn-shimmer shrink-0 w-7 h-7 grid place-items-center rounded-lg text-text-secondary hover:text-primary hover:bg-surface-2 transition-colors"
-          >
-            {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-          </button>
-          <button
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-            aria-label="Settings"
-            title="Settings"
-            className="shrink-0 w-7 h-7 grid place-items-center rounded-lg text-text-secondary hover:text-primary hover:bg-surface-2 transition-colors"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
         </div>
       </div>
 

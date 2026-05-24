@@ -3,21 +3,13 @@ import { Link, Navigate } from "react-router-dom";
 import { ArrowUpRight, Bot } from "lucide-react";
 import { workspaces } from "../data";
 import { ConnectWalletButton } from "../wallet";
-import { ThemeToggle } from "../components/ThemeToggle";
-import type { Theme } from "../types";
 import { slugifyTab } from "../components/ui/AppSidebar";
+import { useAppState } from "../app-state";
 import { DottedGlobe } from "../components/visual/DottedGlobe";
 import { HexGrid } from "../components/visual/HexGrid";
 import { fadeInUp, fadeInUpSmall, fadeInScale, staggerFast } from "../lib/motion";
 import { CHAIN_LOGOS } from "../lib/chain-logos";
 import { useSettings } from "../hooks/useSettings";
-
-type ProjectLauncherProps = {
-  theme: Theme;
-  onToggleTheme: () => void;
-};
-
-
 
 function prettyChain(net: string): string {
   const base = net.replace(/-sepolia$/, "").replace(/-testnet$/, "");
@@ -27,8 +19,9 @@ function prettyChain(net: string): string {
   return base.charAt(0).toUpperCase() + base.slice(1);
 }
 
-export function ProjectLauncher({ theme, onToggleTheme }: ProjectLauncherProps) {
+export function ProjectLauncher() {
   const { settings } = useSettings();
+  const { theme } = useAppState();
   const isDark = theme === "dark";
   const markerCss = isDark ? "#b7fc72" : "#ef6b78";
   const markerColor: [number, number, number] = isDark ? [0.72, 0.99, 0.45] : [0.94, 0.42, 0.47];
@@ -66,7 +59,6 @@ export function ProjectLauncher({ theme, onToggleTheme }: ProjectLauncherProps) 
             Fleet
           </Link>
           <ConnectWalletButton />
-          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
       </header>
 

@@ -20,6 +20,7 @@ import { useSettings, ACCENT_CSS } from "./hooks/useSettings";
 import type { Receipt, Service, Theme } from "./types";
 
 const THEME_STORAGE_KEY = "tollgate-theme";
+const AGENTATION_ENDPOINT = import.meta.env.VITE_AGENTATION_ENDPOINT as string | undefined;
 
 function readInitialTheme(): Theme {
   const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -174,7 +175,7 @@ export default function App() {
       {!isArcExperience && <OnboardingFlow />}
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
       <Routes>
-        <Route path="/" element={<ProjectLauncher theme={theme} onToggleTheme={toggleTheme} />} />
+        <Route path="/" element={<ProjectLauncher />} />
         <Route path="/app/:wsId" element={<AppLayout />}>
           <Route index element={<WorkspacePage />} />
           <Route path=":tabSlug" element={<WorkspacePage />} />
@@ -188,9 +189,9 @@ export default function App() {
         <Route path="*" element={<NotFound />} />
       </Routes>
 
-      {import.meta.env.DEV && !isArcExperience ? (
+      {import.meta.env.DEV ? (
         <Agentation
-          endpoint="http://localhost:4747"
+          endpoint={AGENTATION_ENDPOINT?.trim() || undefined}
           onSessionCreated={(sessionId) => {
             console.info("Agentation session started:", sessionId);
           }}
