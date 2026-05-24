@@ -18,6 +18,7 @@ import {
   AgoraX402Widget,
   ArcAppKitWidget,
 } from "./AgoraExtraWidgets";
+import { ArcMindDebateWidget } from "./ArcMindWidgets";
 
 interface SectionProps {
   title: string;
@@ -90,6 +91,9 @@ export function ArcDeveloperConsoleWidget({ workspace }: Props) {
       </Section>
       <Section title="Data Sources" description="Block, allow, or refresh the market/signal sources used in decisions.">
         <ArcControlSourcesWidget workspace={workspace} />
+      </Section>
+      <Section title="Multi-Agent Debate" description="Bull LLM vs Bear LLM — ArcMind synthesizes a live BUY/SELL/HOLD verdict using real ETH price + Hyperliquid OI.">
+        <ArcMindDebateWidget />
       </Section>
       <Section title="Decision Room" description="Current BUY/SELL/HOLD reasoning, gate status, approve/reject controls.">
         <ArcControlDecisionRoomWidget workspace={workspace} />

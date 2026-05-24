@@ -2120,6 +2120,10 @@ interface DebateResult {
   bullArg: string;
   bearArg: string;
   verdict: "BUY" | "SELL" | "HOLD";
+  fundingRate?: number | null;
+  llmUsed?: boolean;
+  provider?: string;
+  model?: string;
   ts: string;
 }
 
@@ -2133,7 +2137,7 @@ export function ArcMindDebateWidget() {
     setRevealed(false);
     setDebate(null);
     try {
-      const res = await fetch(`${SERVER_URL_MA}/api/arc-debate`, { signal: AbortSignal.timeout(10_000) });
+      const res = await fetch(`${SERVER_URL_MA}/api/arc-debate`, { signal: AbortSignal.timeout(45_000) });
       if (res.ok) setDebate(await res.json() as DebateResult);
     } catch { /* non-blocking */ }
     setLoading(false);
@@ -2156,8 +2160,18 @@ export function ArcMindDebateWidget() {
 
       {debate && (
         <>
-          <div style={{ fontSize: ".62rem", color: "var(--muted)", marginBottom: 10 }}>
-            ETH ${debate.ethPrice.toLocaleString()} · OI {debate.oiValue} · {new Date(debate.ts).toLocaleTimeString()}
+          <div style={{ fontSize: ".62rem", color: "var(--muted)", marginBottom: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>ETH ${debate.ethPrice.toLocaleString()} · OI {debate.oiValue} · {new Date(debate.ts).toLocaleTimeString()}</span>
+            {debate.llmUsed && debate.provider && debate.provider !== "rule-based" && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "#8b5cf620", border: "1px solid #8b5cf640", borderRadius: 4, padding: "1px 6px", fontSize: ".58rem", fontWeight: 700, color: "#8b5cf6" }}>
+                ✦ {debate.provider}/{debate.model?.split("/").pop() ?? debate.model}
+              </span>
+            )}
+            {debate.llmUsed === false && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "#f59e0b20", border: "1px solid #f59e0b40", borderRadius: 4, padding: "1px 6px", fontSize: ".58rem", fontWeight: 700, color: "#f59e0b" }}>
+                rule-based
+              </span>
+            )}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>

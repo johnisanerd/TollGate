@@ -765,6 +765,7 @@ export function renderOverviewExtra(ctx: OverviewCtx): ReactNode | null {
   return (
     <>
       <ArcMindOverviewWidget workspace={workspace} onGoTab={onGoTab} />
+      <ArcMindTractionStrip />
       <ArcContractsPanel workspace={workspace} />
       <AgoraEcosystemLinks />
     </>

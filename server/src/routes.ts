@@ -1371,22 +1371,11 @@ apiRouter.get("/swap-quote", async (req: Request, res: Response) => {
   res.json({ pair: "ETH/USDC", side, amountIn, amountOut, price: ethPrice, priceProvider: marketPrice.provider, priceSources: marketPrice.sources, slippagePct: 0.1, network: "arc-testnet", ts: new Date().toISOString() });
 });
 
-// ─── Multi-agent debate (Bullish vs Bearish) ──────────────────────────────────
-
-const BULLISH_ARGS = [
-  (eth: number, oi: string) => `ETH at $${eth.toLocaleString()} with OI ${oi} signals accumulation. Institutional buyers are absorbing sell pressure. Kelly sizing suggests 18% long.`,
-  (eth: number) => `$${eth.toLocaleString()} is a structural support zone on the 4h chart. Funding rate normalized — ideal entry for a mean-reversion long.`,
-  (_eth: number, oi: string) => `Open interest ${oi} expanding while price holds. Shorts are getting squeezed. Momentum favors the bulls.`,
-];
-const BEARISH_ARGS = [
-  (eth: number, oi: string) => `OI ${oi} at elevated levels with ETH at $${eth.toLocaleString()} — classic overextension. Risk of long squeeze if price breaks support.`,
-  (eth: number) => `$${eth.toLocaleString()} rejected at resistance twice. Funding rate elevated — longs overleveraged. SELL signal.`,
-  (_eth: number, oi: string) => `Open interest ${oi} diverging from price — bearish. Smart money is reducing exposure. Short the bounce.`,
-];
+// ─── Multi-agent debate (Bullish vs Bearish LLM calls) ───────────────────────
 
 apiRouter.get("/arc-debate", async (_req: Request, res: Response) => {
   const marketPrice = await fetchEthMarketPrice();
-  let ethPrice: number | null = marketPrice.price;
+  const ethPrice: number | null = marketPrice.price;
   let oiValue: string | null = null;
   let fundingRate: number | null = null;
   try {
@@ -1407,16 +1396,54 @@ apiRouter.get("/arc-debate", async (_req: Request, res: Response) => {
     return res.status(503).json({ ok: false, reason: "live_sources_unavailable", ts: new Date().toISOString() });
   }
 
-  const fundingSignal = fundingRate ?? 0;
-  const fallbackBull = (eth: number, oi: string) =>
-    `ETH at $${eth.toLocaleString()} with OI ${oi} signals accumulation. Kelly sizing suggests a cautious long.`;
-  const fallbackBear = (eth: number, oi: string) =>
-    `OI ${oi} with ETH at $${eth.toLocaleString()} suggests crowding risk. Reduce exposure until confirmation improves.`;
-  const bullArg = (BULLISH_ARGS[0] ?? fallbackBull)(ethPrice, oiValue);
-  const bearArg = (BEARISH_ARGS[0] ?? fallbackBear)(ethPrice, oiValue);
-  const verdict: "BUY" | "SELL" | "HOLD" = fundingSignal > 0.0001 ? "BUY" : fundingSignal < -0.0001 ? "SELL" : "HOLD";
+  const marketCtx = `ETH/USDC price: $${ethPrice.toLocaleString()} | Open interest: ${oiValue} | Funding rate: ${fundingRate !== null ? (fundingRate * 100).toFixed(4) + "%" : "unknown"}`;
 
-  res.json({ ethPrice, oiValue, bullArg, bearArg, verdict, fundingRate, ts: new Date().toISOString() });
+  if (!isLlmConfigured()) {
+    const fundingSignal = fundingRate ?? 0;
+    const bullArg = `ETH at $${ethPrice.toLocaleString()} with OI ${oiValue} — accumulation pattern. Funding at ${fundingRate !== null ? (fundingRate * 100).toFixed(4) + "%" : "unknown"} supports cautious long entry.`;
+    const bearArg = `OI ${oiValue} elevated against $${ethPrice.toLocaleString()} — crowding risk. Funding ${fundingRate !== null ? (fundingRate * 100).toFixed(4) + "%" : "unknown"} suggests overleveraged longs.`;
+    const verdict: "BUY" | "SELL" | "HOLD" = fundingSignal > 0.0001 ? "BUY" : fundingSignal < -0.0001 ? "SELL" : "HOLD";
+    return res.json({ ethPrice, oiValue, bullArg, bearArg, verdict, fundingRate, llmUsed: false, provider: "rule-based", model: "none", ts: new Date().toISOString() });
+  }
+
+  const bullResult = await routeLlmCall({
+    system: "You are a Bullish crypto analyst. Given live market data, make the strongest possible case for buying ETH. Be concise — 2-3 sentences max. Cite specific numbers from the data provided. Do not hedge.",
+    prompt: marketCtx,
+    maxTokens: 120,
+    temperature: 0.5,
+  });
+
+  const bearResult = await routeLlmCall({
+    system: "You are a Bearish crypto analyst. Given live market data, make the strongest possible case for selling or avoiding ETH. Be concise — 2-3 sentences max. Cite specific numbers from the data provided. Do not hedge.",
+    prompt: marketCtx,
+    maxTokens: 120,
+    temperature: 0.5,
+  });
+
+  const verdictResult = await routeLlmCall({
+    system: "You are ArcMind, an autonomous trading agent. Read the bull and bear arguments below and respond with ONLY one word: BUY, SELL, or HOLD. No explanation.",
+    prompt: `Market: ${marketCtx}\n\nBull: ${bullResult.text || "unavailable"}\nBear: ${bearResult.text || "unavailable"}\n\nVerdict:`,
+    maxTokens: 10,
+    temperature: 0.1,
+  });
+
+  const bullArg = bullResult.ok && bullResult.text
+    ? bullResult.text.trim()
+    : `ETH at $${ethPrice.toLocaleString()} with OI ${oiValue} — accumulation signals. LLM unavailable: ${bullResult.reason ?? "unknown"}.`;
+  const bearArg = bearResult.ok && bearResult.text
+    ? bearResult.text.trim()
+    : `OI ${oiValue} vs $${ethPrice.toLocaleString()} — crowding risk. LLM unavailable: ${bearResult.reason ?? "unknown"}.`;
+
+  const rawVerdict = verdictResult.text.trim().toUpperCase();
+  const verdict: "BUY" | "SELL" | "HOLD" = rawVerdict === "BUY" ? "BUY" : rawVerdict === "SELL" ? "SELL" : "HOLD";
+
+  res.json({
+    ethPrice, oiValue, bullArg, bearArg, verdict, fundingRate,
+    llmUsed: bullResult.ok || bearResult.ok,
+    provider: bullResult.provider,
+    model: bullResult.model,
+    ts: new Date().toISOString(),
+  });
 });
 
 // ─── Agent leaderboard ────────────────────────────────────────────────────────
