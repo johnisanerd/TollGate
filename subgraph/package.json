@@ -1,0 +1,14 @@
+{
+  "name": "arcmind-subgraph",
+  "version": "1.0.0",
+  "scripts": {
+    "codegen": "graph codegen",
+    "build": "graph build",
+    "deploy": "graph deploy --node https://api.thegraph.com/deploy/ kravadk/arcmind-arc",
+    "deploy:studio": "graph deploy --studio arcmind-arc"
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "^0.74.0",
+    "@graphprotocol/graph-ts": "^0.35.1"
+  }
+}

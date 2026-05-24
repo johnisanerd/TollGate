@@ -21,6 +21,7 @@ import {
 import { ArcMindDebateWidget } from "./ArcMindWidgets";
 import { ArcSlashLeaderboardWidget } from "./ArcSlashLeaderboardWidget";
 import { ArcGalxeQuestWidget } from "./ArcGalxeQuestWidget";
+import { ArcMultiExchangeWidget } from "./ArcMultiExchangeWidget";
 
 interface SectionProps {
   title: string;
@@ -102,6 +103,9 @@ export function ArcDeveloperConsoleWidget({ workspace }: Props) {
       </Section>
       <Section title="Galxe Pioneer Quest" description="Stake $1 on Arc Testnet → collect a receipt → claim your soulbound ArcMind Pioneer NFT badge.">
         <ArcGalxeQuestWidget />
+      </Section>
+      <Section title="Cross-Platform Positions" description="Read-only agent positions on dYdX v4 and GMX v2 (Arbitrum). Set VITE_DYDX_ADDRESS / VITE_GMX_AGENT_ADDRESS.">
+        <ArcMultiExchangeWidget workspace={workspace} />
       </Section>
       <Section title="Decision Room" description="Current BUY/SELL/HOLD reasoning, gate status, approve/reject controls.">
         <ArcControlDecisionRoomWidget workspace={workspace} />

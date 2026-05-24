@@ -38,23 +38,22 @@ type SlashEvent @entity(immutable: true) {
   agent: Agent!
   decisionIndex: BigInt!
   reason: String!
+  timestamp: BigInt!
   blockNumber: BigInt!
   txHash: Bytes!
-  timestamp: BigInt!
 }
 
 type Market @entity(immutable: false) {
   id: Bytes!
   operator: Bytes!
   quoteToken: Bytes!
-  baseSymbol: String!
+  agent: Bytes!
+  label: String!
   deployedAt: BigInt!
   deployedBlock: BigInt!
   deployedTx: Bytes!
 
   totalStaked: BigInt!
-  totalSettled: BigInt!
-  stakerCount: BigInt!
   settlementCount: BigInt!
 
   stakes: [Stake!]! @derivedFrom(field: "market")
@@ -74,9 +73,9 @@ type Stake @entity(immutable: true) {
 type Settlement @entity(immutable: true) {
   id: ID!
   market: Market!
-  staker: Bytes!
-  stake: BigInt!
+  winner: Bytes!
   payout: BigInt!
+  performanceFee: BigInt!
   pnl: BigInt!
   blockNumber: BigInt!
   txHash: Bytes!

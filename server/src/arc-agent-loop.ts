@@ -6,7 +6,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ethers } from "ethers";
 import { buildCopyGuardDecision, type CopyGuardLeader, type CopyGuardSignals } from "./arc-copyguard.js";
@@ -15,6 +15,7 @@ import { fetchEthMarketPrice } from "./market-data.js";
 import { appendReceipt } from "./store.js";
 import { dispatchAlert } from "./alerts.js";
 import { postCast, isFarcasterConfigured } from "./farcaster.js";
+import { routeLlmCall } from "./llm.js";
 
 const ARC_RPC = process.env.ARC_RPC_URL ?? "https://rpc.testnet.arc-node.thecanteenapp.com/v1/public";
 const ARC_KEY = process.env.ARC_PRIVATE_KEY ?? "";
@@ -34,6 +35,107 @@ let prevEthPrice: number | null = null;
 let arcWallet: ethers.Wallet | null = null;
 let schedulerStop: (() => void) | null = null;
 
+/* ─── Regime detection ───────────────────────────────────────────────── */
+
+type MarketRegime = "BULL" | "BEAR" | "RISK_OFF" | "CHOPPY";
+
+function classifyRegimeFromSignals(
+  ethChange24h: number,
+  fundingRate: number,
+  oiUsd: number,
+): { regime: MarketRegime; reasoning: string } {
+  const strongDown = ethChange24h < -3;
+  const strongUp   = ethChange24h > 3;
+  const negFunding = fundingRate < -0.0002;
+  const posFunding = fundingRate > 0.0002;
+  const lowOi      = oiUsd > 0 && oiUsd < 500_000_000;
+
+  if (strongDown && (negFunding || lowOi))
+    return { regime: "RISK_OFF", reasoning: `ETH ${ethChange24h.toFixed(2)}% w/ funding ${fundingRate.toFixed(5)} — capital flight, route to USYC.` };
+  if (strongUp && posFunding)
+    return { regime: "BULL", reasoning: `ETH ${ethChange24h.toFixed(2)}% w/ bullish funding — trend up, hold ETH allocation.` };
+  if (ethChange24h < -1 && fundingRate < 0)
+    return { regime: "BEAR", reasoning: `ETH ${ethChange24h.toFixed(2)}% w/ negative funding — downtrend, scale down beta.` };
+  if (ethChange24h > 1 && fundingRate > 0)
+    return { regime: "BULL", reasoning: `ETH ${ethChange24h.toFixed(2)}% w/ positive funding — uptrend, maintain risk-on.` };
+  return { regime: "CHOPPY", reasoning: `ETH ${ethChange24h.toFixed(2)}%, funding ${fundingRate.toFixed(5)} — signals inconclusive.` };
+}
+
+async function detectRegime(
+  ethPrice: number,
+  ethChange24h: number,
+  fundingRate: number,
+  oiUsd: number,
+): Promise<{ regime: MarketRegime; reasoning: string; source: "rule" | "llm" }> {
+  const rule = classifyRegimeFromSignals(ethChange24h, fundingRate, oiUsd);
+  try {
+    const llmOut = await routeLlmCall({
+      prompt: `Market signals:\n- ETH: $${ethPrice.toFixed(2)}\n- 24h change: ${ethChange24h.toFixed(2)}%\n- HL OI: ${(oiUsd / 1e6).toFixed(1)}M USD\n- Funding: ${fundingRate.toFixed(5)}\n\nRule regime: ${rule.regime}\nAgree? First word must be BULL, BEAR, RISK_OFF, or CHOPPY. Then one short reasoning sentence.`,
+      system: "Classify crypto market regime. First word must be exactly: BULL, BEAR, RISK_OFF, or CHOPPY.",
+      maxTokens: 80,
+      temperature: 0.15,
+    });
+    if (llmOut.ok && llmOut.text) {
+      const match = llmOut.text.match(/(BULL|BEAR|RISK_OFF|CHOPPY)/);
+      if (match?.[1]) {
+        return { regime: match[1] as MarketRegime, reasoning: llmOut.text.trim().slice(0, 320), source: "llm" };
+      }
+    }
+  } catch { /* LLM failure is non-fatal — rule-based stands */ }
+  return { ...rule, source: "rule" };
+}
+
+/* ─── Degradation evaluator ──────────────────────────────────────────── */
+
+interface DegradationState {
+  winRatePct: number;
+  graded: number;
+  recommendation: "ok" | "watch" | "degraded";
+}
+
+function readRollingWinRate(): DegradationState {
+  const threshold = Number(process.env["ARC_DEGRADATION_THRESHOLD"] ?? 40);
+  try {
+    if (!existsSync(LOG_FILE)) return { winRatePct: 100, graded: 0, recommendation: "ok" };
+    const cutoff = Date.now() - 7 * 86_400_000;
+    const recent: Array<{ decision: string; ethPrice: number; ts: number }> = [];
+    for (const line of readFileSync(LOG_FILE, "utf8").trim().split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line) as Record<string, unknown>;
+        const ts = new Date(String(entry["ts"] ?? "")).getTime();
+        if (!Number.isFinite(ts) || ts < cutoff) continue;
+        const decision = String(entry["decision"] ?? "");
+        const ethPrice = Number(entry["ethPrice"] ?? 0);
+        if ((decision === "BUY" || decision === "SELL" || decision === "HOLD") && ethPrice > 0)
+          recent.push({ decision, ethPrice, ts });
+      } catch { /* skip malformed lines */ }
+    }
+    recent.sort((a, b) => a.ts - b.ts);
+    let wins = 0, graded = 0;
+    for (let i = 0; i < recent.length - 1; i++) {
+      const curr = recent[i]!;
+      const next = recent[i + 1]!;
+      if (curr.decision === "HOLD") continue;
+      const priceUp = next.ethPrice > curr.ethPrice;
+      const won = (curr.decision === "BUY" && priceUp) || (curr.decision === "SELL" && !priceUp);
+      if (won) wins++;
+      graded++;
+    }
+    const winRatePct = graded > 0 ? (wins / graded) * 100 : 100;
+    const recommendation: DegradationState["recommendation"] =
+      graded < 3 ? "ok"
+      : winRatePct < threshold ? "degraded"
+      : winRatePct < threshold + 10 ? "watch"
+      : "ok";
+    return { winRatePct: Number(winRatePct.toFixed(1)), graded, recommendation };
+  } catch {
+    return { winRatePct: 100, graded: 0, recommendation: "ok" };
+  }
+}
+
+export const __testingLoop = { classifyRegimeFromSignals, readRollingWinRate };
+
 export type ArcAgentLoopStatus = {
   state: "idle" | "running" | "skipped" | "recorded" | "failed";
   startedAt?: string;
@@ -44,6 +146,9 @@ export type ArcAgentLoopStatus = {
   ethPrice?: number;
   leaderSource?: LeaderSource;
   message?: string;
+  regime?: MarketRegime;
+  regimeSource?: "rule" | "llm";
+  degradation?: DegradationState;
 };
 
 type LeaderSourceStatus = "configured" | "missing" | "unavailable";
@@ -104,12 +209,17 @@ async function fetchHyperliquidOI(): Promise<{ oiValue: string; oiUsd: number; f
   }
 }
 
-function makeDecision(ethPrice: number, oi: { fundingRate: string } | null): "BUY" | "SELL" | "HOLD" {
+function makeDecision(ethPrice: number, oi: { fundingRate: string } | null, regime: MarketRegime): "BUY" | "SELL" | "HOLD" {
+  if (regime === "RISK_OFF") return "HOLD";
   const ethUp = prevEthPrice !== null && ethPrice > prevEthPrice * 1.001;
   const ethDown = prevEthPrice !== null && ethPrice < prevEthPrice * 0.999;
   const fr = oi ? parseFloat(oi.fundingRate) : NaN;
   const oiBullish = !Number.isNaN(fr) && fr > 0.0001;
   const oiBearish = !Number.isNaN(fr) && fr < -0.0001;
+  if (regime === "BEAR") {
+    if (ethDown && oiBearish) return "SELL";
+    return "HOLD";
+  }
   if (ethUp && oiBullish) return "BUY";
   if (ethDown && oiBearish) return "SELL";
   return "HOLD";
@@ -306,6 +416,15 @@ function appendLog(entry: Record<string, unknown>): void {
 export async function arcAgentLoop(): Promise<void> {
   const tag = "[arc-loop]";
   lastLoopStatus = { state: "running", startedAt: new Date().toISOString(), message: "Arc agent loop tick started." };
+  const degradation = readRollingWinRate();
+  if (degradation.recommendation === "degraded") {
+    const msg = `ArcMind degraded: ${degradation.winRatePct}% win-rate (${degradation.graded} graded, 7d) — tick paused.`;
+    console.warn(`${tag} ${msg}`);
+    await dispatchAlert({ title: "ArcMind: strategy degraded — tick paused", body: msg, level: "warn", dedupeKey: "degradation:tick_paused" }).catch(() => {});
+    lastLoopStatus = { ...lastLoopStatus, state: "skipped", finishedAt: new Date().toISOString(), degradation, message: msg };
+    return;
+  }
+
   const [ethPrice, hlOI, leaderFeed, sourceRadar] = await Promise.all([fetchEthPrice(), fetchHyperliquidOI(), fetchCopyLeaders(), Promise.resolve(buildArcSignalSourceRadar(process.env))]);
   if (!ethPrice) {
     console.warn(`${tag} Could not fetch ETH price; skipping tick`);
@@ -320,18 +439,22 @@ export async function arcAgentLoop(): Promise<void> {
   }
 
   const previousEthPrice = prevEthPrice;
-  const decision = makeDecision(ethPrice, hlOI);
-  prevEthPrice = ethPrice;
-
   const fundingRateNum = hlOI ? parseFloat(hlOI.fundingRate) : 0;
   const fundingRate = Number.isFinite(fundingRateNum) ? fundingRateNum : 0;
   const ethPriceChangePct = previousEthPrice
     ? Number((((ethPrice - previousEthPrice) / previousEthPrice) * 100).toFixed(3))
     : 0;
+  const oiUsd = hlOI?.oiUsd ?? 0;
+
+  const { regime, reasoning: regimeReasoning, source: regimeSource } = await detectRegime(ethPrice, ethPriceChangePct, fundingRate, oiUsd);
+  console.log(`${tag} regime=${regime} (${regimeSource}) — ${regimeReasoning.slice(0, 80)}`);
+
+  const decision = makeDecision(ethPrice, hlOI, regime);
+  prevEthPrice = ethPrice;
   const copyGuardSignals: CopyGuardSignals = {
     ethPrice,
     ethPriceChangePct,
-    openInterestUsd: hlOI?.oiUsd ?? 0,
+    openInterestUsd: oiUsd,
     fundingRate,
     volatilityPct: previousEthPrice ? Math.min(12, Math.abs(ethPriceChangePct) * 3 + 2) : 2.5,
     polymarketYesPct: null,
@@ -357,6 +480,10 @@ export async function arcAgentLoop(): Promise<void> {
     signalGuard: copyGuard.signalGuard,
     reasoningTrace: copyGuard.reasoningTrace,
     copyGuardHash: copyGuard.decisionHash,
+    regime,
+    regimeSource,
+    regimeReasoning,
+    degradation,
   };
   const decisionHash = "0x" + sha256Hex(JSON.stringify(payload));
   const traceStorage = await pinTraceJson({ ...payload, decisionHash }, decisionHash);
@@ -366,6 +493,9 @@ export async function arcAgentLoop(): Promise<void> {
     ethPrice,
     leaderSource: leaderFeed.source,
     decisionHash,
+    regime,
+    regimeSource,
+    degradation,
     message: "Decision payload built.",
   };
 
