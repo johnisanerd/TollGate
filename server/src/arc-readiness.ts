@@ -28,6 +28,12 @@ export type ArcReadinessInput = {
   deployedContracts?: {
     registry?: string | null;
     escrow?: string | null;
+    controlLayer?: {
+      agentTreasury?: string | null;
+      strategyVault?: string | null;
+      riskGuard?: string | null;
+      receiptRegistry?: string | null;
+    } | null;
   };
   decisions: unknown[];
   receipts: Array<{ serviceId?: string }>;
@@ -66,6 +72,11 @@ export function buildArcReadinessReport(input: ArcReadinessInput): ArcReadinessR
   const x402Network = input.x402Network ?? "";
   const registryAddress = input.env["VITE_ARC_REGISTRY_ADDRESS"] || input.deployedContracts?.registry || "";
   const escrowAddress = input.env["VITE_ARC_ESCROW_ADDRESS"] || input.deployedContracts?.escrow || "";
+  const controlLayer = input.deployedContracts?.controlLayer;
+  const agentTreasuryAddress = input.env["VITE_ARC_AGENT_TREASURY_ADDRESS"] || controlLayer?.agentTreasury || "";
+  const strategyVaultAddress = input.env["VITE_ARC_STRATEGY_VAULT_ADDRESS"] || controlLayer?.strategyVault || "";
+  const riskGuardAddress = input.env["VITE_ARC_RISK_GUARD_ADDRESS"] || controlLayer?.riskGuard || "";
+  const receiptRegistryAddress = input.env["VITE_ARC_RECEIPT_REGISTRY_ADDRESS"] || controlLayer?.receiptRegistry || "";
 
   const checks: ArcReadinessCheck[] = [
     {
@@ -179,6 +190,17 @@ export function buildArcReadinessReport(input: ArcReadinessInput): ArcReadinessR
         ? input.env["VITE_ARC_ESCROW_ADDRESS"] ? "configured" : "from deployment artifact"
         : "missing",
       fix: "Set VITE_ARC_ESCROW_ADDRESS or update contracts/deployments/arcTestnet.json with the deployed CopyTradeEscrow address.",
+    },
+    {
+      id: "arc_control_contracts",
+      label: "Control layer contracts",
+      ok: [agentTreasuryAddress, strategyVaultAddress, riskGuardAddress, receiptRegistryAddress].every(isAddress),
+      severity: "launch",
+      weight: 8,
+      detail: [agentTreasuryAddress, strategyVaultAddress, riskGuardAddress, receiptRegistryAddress].every(isAddress)
+        ? input.env["VITE_ARC_AGENT_TREASURY_ADDRESS"] ? "configured" : "from deployment artifact"
+        : "missing one or more AgentTreasury/StrategyVault/RiskGuard/ReceiptRegistry addresses",
+      fix: "Deploy Arc control contracts or set VITE_ARC_AGENT_TREASURY_ADDRESS, VITE_ARC_STRATEGY_VAULT_ADDRESS, VITE_ARC_RISK_GUARD_ADDRESS and VITE_ARC_RECEIPT_REGISTRY_ADDRESS.",
     },
   ];
 

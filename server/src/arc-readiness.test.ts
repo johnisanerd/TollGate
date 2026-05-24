@@ -58,6 +58,12 @@ describe("Arc readiness report", () => {
       deployedContracts: {
         registry: address,
         escrow: address,
+        controlLayer: {
+          agentTreasury: address,
+          strategyVault: address,
+          riskGuard: address,
+          receiptRegistry: address,
+        },
       },
       x402PayoutAddress: address,
       x402Network: "arc-testnet",
@@ -85,6 +91,10 @@ describe("Arc readiness report", () => {
         ARC_AGENT_ID: "0x" + "a".repeat(64),
         VITE_ARC_REGISTRY_ADDRESS: address,
         VITE_ARC_ESCROW_ADDRESS: address,
+        VITE_ARC_AGENT_TREASURY_ADDRESS: address,
+        VITE_ARC_STRATEGY_VAULT_ADDRESS: address,
+        VITE_ARC_RISK_GUARD_ADDRESS: address,
+        VITE_ARC_RECEIPT_REGISTRY_ADDRESS: address,
       },
       x402PayoutAddress: address,
       x402Network: "arc-testnet",

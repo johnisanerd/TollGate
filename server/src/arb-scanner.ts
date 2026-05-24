@@ -15,6 +15,8 @@
  */
 
 import { fetchAllTickers, type Ticker, type VenueId } from "./exchanges.js";
+import { dispatchAlert } from "./alerts.js";
+import { confirmEthPrice } from "./pyth.js";
 
 export interface ArbOpportunity {
   id: string;
@@ -36,6 +38,7 @@ export interface ArbSnapshot {
   tickers: Ticker[];
   opportunities: ArbOpportunity[];
   thresholdBps: number;
+  pyth?: { price: number; deviationBps: number; agrees: boolean; ts: number };
 }
 
 const SYMBOL = "ETH/USDC";
@@ -89,13 +92,56 @@ export function computeOpportunities(tickers: Ticker[], symbol = SYMBOL): ArbOpp
 export async function buildSnapshot(symbol = SYMBOL): Promise<ArbSnapshot> {
   const tickers = await fetchAllTickers(symbol);
   const opportunities = computeOpportunities(tickers, symbol);
+
+  // Pyth confirmation (best-effort — never blocks the snapshot).
+  let pyth: ArbSnapshot["pyth"] | undefined;
+  try {
+    const liveMids = tickers.filter((t) => t.ok && t.mid > 0).map((t) => t.mid);
+    if (liveMids.length > 0) {
+      const consensus = liveMids.reduce((a, b) => a + b, 0) / liveMids.length;
+      const confirm = await confirmEthPrice(consensus, 50);
+      if (confirm.pyth.ok) {
+        pyth = {
+          price: confirm.pyth.price,
+          deviationBps: confirm.deviationBps,
+          agrees: confirm.agrees,
+          ts: confirm.pyth.ts,
+        };
+      }
+    }
+  } catch { /* Pyth fail is non-fatal; snapshot returns without it */ }
+
   return {
     symbol,
     ts: Date.now(),
     tickers,
     opportunities,
     thresholdBps: ARB_THRESHOLD_BPS,
+    pyth,
   };
+}
+
+const ALERT_NET_BPS_THRESHOLD = Number(process.env.ARB_ALERT_NET_BPS ?? 100);
+
+async function maybeAlertOnSnapshot(snap: ArbSnapshot): Promise<void> {
+  const best = snap.opportunities[0];
+  if (!best) return;
+  if (best.netBps < ALERT_NET_BPS_THRESHOLD) return;
+  // Skip if Pyth disagrees — we don't want to broadcast stale spreads.
+  if (snap.pyth && !snap.pyth.agrees) return;
+
+  const dedupeKey = `arb:${best.buyVenue}->${best.sellVenue}:${Math.floor(best.netBps / 10)}`;
+  await dispatchAlert({
+    title: `ArcMind arbitrage — net ${best.netBps.toFixed(1)} bps`,
+    body: [
+      `Buy ${best.buyVenue} @ $${best.buyPrice.toFixed(2)} → Sell ${best.sellVenue} @ $${best.sellPrice.toFixed(2)}`,
+      `Gross ${best.spreadBps.toFixed(1)} bps · Fees ${best.feeBps.toFixed(1)} bps · Net ${best.netBps.toFixed(1)} bps`,
+      `Est. profit per $100: $${best.profitUsdPer100.toFixed(4)}`,
+      snap.pyth ? `Pyth ETH/USD: $${snap.pyth.price.toFixed(2)} (Δ ${snap.pyth.deviationBps.toFixed(1)} bps)` : "Pyth confirmation unavailable",
+    ].join("\n"),
+    level: "alert",
+    dedupeKey,
+  }).catch(() => { /* swallow — alerts are best-effort */ });
 }
 
 type Listener = (snap: ArbSnapshot) => void;
@@ -120,6 +166,7 @@ export function startArbScanner(): () => void {
       for (const cb of listeners) {
         try { cb(snap); } catch { /* swallow per-listener errors */ }
       }
+      await maybeAlertOnSnapshot(snap);
     } finally {
       running = false;
     }
