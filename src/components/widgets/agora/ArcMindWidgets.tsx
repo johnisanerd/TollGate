@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { analyticsEvents } from "../../../lib/analytics";
 import { safeAmt } from "../../../lib/validate";
 import { Skeleton } from "../../ui/Motion";
 import {
@@ -274,6 +275,7 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
     }
     const now = Date.now();
     setStakeErr(null);
+    analyticsEvents.stakeStarted("", amt);
 
     setStaking(true);
     let stakeTx = localReceiptId("copy_stake_local");
@@ -284,6 +286,7 @@ export function ArcMindCopyTradingWidget({ workspace }: { workspace: Workspace }
       stakeTx = txHash;
       setStakeTxHash(txHash);
       setStakeGasless(gasless);
+      analyticsEvents.stakeCompleted("", txHash, amt);
       emitReceipt({
         workspaceId: workspace.id,
         serviceName: `Stake to CopyTradeEscrow - $${amt} USDC`,
@@ -944,6 +947,7 @@ export function ArcMindReasoningWidget({ workspace }: { workspace: Workspace }) 
       const { agentId: id, txHash } = await registerArcAgent("arcmind-v1", JSON.stringify({ name: "ArcMind", version: "1.0", workspace: workspace.id }));
       setAgentId(id);
       setRegTxHash(txHash);
+      analyticsEvents.agentSelected(id);
     } catch (e: unknown) {
       const id = `local-agent-${Date.now().toString(36)}`;
       const note = shortFlowError(e);
