@@ -44,30 +44,33 @@ flowchart LR
 
 ## What The User Can Do
 
-The Arc workspace was redesigned around the Hyperliquid Vaults UX model in May 2026 — pick an agent, inspect its profile, copy with one click. Seven tabs replace the original twelve developer-facing screens.
+The Arc workspace is a full multi-tab trading platform. Pick an agent, inspect its reasoning, stake with one click, or drill into raw positions and predictions.
 
 | Tab | User question | Main actions |
 |---|---|---|
 | **Discover** | What agents can I copy? | Leaderboard: ArcMind (Arc, native) + every Hyperliquid vault from `vaultSummaries`. Sort/filter by APR / AUM / MDD / followers / age. Cross-chain Mirror button per Hyperliquid row (CCTP intent) |
 | **Agent: ArcMind** | What is ArcMind doing and why? | Portfolio sparkline, win rate, Sharpe, 30d return, traded assets, fee schedule, source contribution per decision, followers count, ArcScan link for every on-chain action |
 | **Copy & Position** | How do I copy with $X USDC? | Stake (min $1), risk profile, max drawdown, advanced Binance/Bybit-style settings (TP / SL / max position / slippage / copy mode), live realized + unrealized PnL split |
+| **Signal Feed** | What is the agent reasoning right now? | LLM Debate Room (Bull vs Bear vs Synthesizer), live ETH price + Hyperliquid OI, market regime badge (BULL / BEAR / RISK_OFF / CHOPPY) |
+| **Arb Scanner** | Any live spread opportunities? | Real-time SSE feed of ETH spread across OKX, Coinbase, Binance, Hyperliquid; net bps after fees; Execute button creates CCTP intent |
+| **Perp Trading** | Can I see agent perp positions? | Read-only dYdX v4 (Cosmos) + GMX v2 (Arbitrum) positions; env-gated by `VITE_DYDX_ADDRESS` / `VITE_GMX_AGENT_ADDRESS` |
+| **Predictions** | Any prediction market bets? | Top Polymarket crypto events + 3 native Arc prediction markets via `PredictionOracle.sol`; Kelly-sized bet intents emitted on each BUY/BULL tick |
 | **Receipts** | What proof exists? | Filter, export CSV, copy receipt id; embedded ERC-8183 Job lifecycle viewer (Open → Funded → Submitted → Terminal) with per-state ArcScan tx links |
-| **Developer Console** | How do builders integrate this? | 13 collapsible power-user sections: Agent Budget, Strategies, Sources, Decision Room, Execution Queue, Risk Guard, Positions, Control Receipts, Portfolio, App Kit, x402, CCTP, Circle Tools |
+| **Developer Console** | How do builders integrate this? | 15 collapsible power-user sections: Agent Budget, Strategies, Sources, Multi-Agent Debate, Slash-Bonded Leaderboard, Galxe Pioneer Quest, Cross-Platform Positions, Decision Room, Execution Queue, Risk Guard, Positions, Control Receipts, Portfolio, App Kit, x402, CCTP, Circle Tools |
+| **Leaderboard** | Which agents are top ranked? | ERC-8004 on-chain scores, bond-at-risk USDC per agent, slashed agents with reasons and tx hashes |
 | **Docs** | API reference | Full Docs portal |
-| **Integrations** | Which chains/keys do I need? | Live integration grid |
+| **Integrations** | Which chains/keys do I need? | Live integration grid with status per integration |
 
 ## Why It Fits Agora
 
-Primary fit:
+All 6 RFBs are covered:
 
-- **RFB 06 - Social Trading Intelligence**: AI does not blindly copy leaders. It weights sources, checks risk decay and decides COPY, HOLD, REDUCE, STOP or MOVE_TO_USDC.
-
-Secondary fit:
-
-- **RFB 01 - Perpetual Futures Trading Agent**: risk guard, drawdown rules, stale-source blocking and emergency exit logic.
-- **RFB 02 - Prediction Market Trader Intelligence**: source-weighted decision room and paid reasoning proofs.
-- **RFB 04 - Adaptive Portfolio Manager**: strategy vault, risk-off routing and rebalancing controls.
-- **RFB 05 - Cross-Platform Arbitrage Agent**: Arb Watcher can detect routes, but execution is gated by budget and policy.
+- **RFB 01 - Perpetual Futures Trading Agent**: autonomous 30-min loop; risk guard + drawdown rules + stale-source blocking + emergency exit; read-only dYdX v4 + GMX v2 position tracking; HL Perp Trading tab; degradation evaluator auto-pauses the loop when 7d win-rate drops below 40%.
+- **RFB 02 - Prediction Market Trader Intelligence**: Polymarket Gamma live feed (top crypto events by 24h volume); Kelly-sized bet intents computed on every BUY/BULL tick and recorded via `recordPolymarketIntent`; native Arc prediction markets via `PredictionOracle.sol`.
+- **RFB 03 - Prediction Market Creator**: `MarketFactory` deploys isolated markets on-chain; `seed-prediction-markets.cjs` seeds 3 geopolitical + crypto questions; `PredictionOracle.sol` handles admin-attested resolution.
+- **RFB 04 - Adaptive Portfolio Manager**: regime classifier (BULL/BEAR/RISK_OFF/CHOPPY) via rule engine + optional LLM second-opinion; RISK_OFF routes to USYC via `UsycRouter.sol`; strategy vault + rebalancing controls.
+- **RFB 05 - Cross-Platform Arbitrage Agent**: real-time arb scanner (OKX, Coinbase, Binance, Hyperliquid) via SSE; spread ranked by net bps after CCTP fee; Execute creates CCTP intent; Pyth Network sub-second price confirmation.
+- **RFB 06 - Social Trading Intelligence**: CopyGuard decay scoring (drawdown ×0.2, losses ×0.15, vol ×0.1); slash-bonded leaderboard (ERC-8004 reputation on-chain); Farcaster auto-cast + Discord + Telegram on every BUY/SELL decision; Galxe Pioneer NFT quest.
 
 ## Funding Model
 
@@ -152,8 +155,14 @@ flowchart TB
 The standalone autonomous agent runtime lives at `packages/arcmind-agent/`. Architecture matches ElizaOS plugin shape (Character + Providers + Actions + Evaluators + Service) with a local TypeScript shim of the public `@elizaos/core` types — drop in `@elizaos/core` later by changing one `types.ts` import, no business-logic rewrites needed.
 
 Providers: `coingeckoPriceProvider`, `hyperliquidOiProvider`, `leaderFeedProvider`.
-Actions: `decideEthDirectionAction`, `recordOnChainAction`.
-Evaluator: `decisionAccuracyEvaluator` (feeds ERC-8004 reputation).
+Actions: `decideEthDirectionAction`, `recordOnChainAction`, `predictionBetAction` (Kelly-sized Polymarket intent).
+Evaluators: `decisionAccuracyEvaluator` (feeds ERC-8004 reputation), `degradationEvaluator` (7d rolling win-rate; auto-pauses loop + fires alert at < 40%).
+
+The `arc-agent-loop.ts` server extension adds:
+- **Regime detection** — rule-based classifier (BULL/BEAR/RISK_OFF/CHOPPY) with optional LLM second-opinion via OpenRouter/Anthropic/Hermes. RISK_OFF forces HOLD; BEAR blocks BUY.
+- **Degradation guard** — reads `data/arc-decisions.jsonl`; pauses tick and fires alert when 7-day win-rate falls below configurable threshold.
+- **Polymarket Kelly intent** — on BUY/BULL ticks: fetches top crypto market from Gamma API, computes fractional-Kelly stake (0.5×, capped $5), records intent via `polymarket-exec.ts`.
+- **Decision broadcast** — auto-casts to Farcaster (`@arcmind` channel), Discord webhook, and Telegram on every non-HOLD decision.
 
 ```ts
 import { startArcMindAgent } from "@arcmind/agent";
@@ -188,15 +197,17 @@ const stop = await startArcMindAgent({
 | `CopyTradeMarket` | Per-market escrow: stake/settle/killSwitch/pause; immutable fee + drawdown bounds; ERC-8183 Job lifecycle events | [`contracts/contracts/CopyTradeMarket.sol`](contracts/contracts/CopyTradeMarket.sol) |
 | `AgentRegistry` | Multi-agent registry with `AccessControl` (resolver + governor roles), slashing, ERC-8004 view interface | [`contracts/contracts/AgentRegistry.sol`](contracts/contracts/AgentRegistry.sol) |
 
-**Live on Arc Testnet — `npm run deploy:arc-market-factory` 2026-05-23:**
+**Live on Arc Testnet:**
 
 | Contract | Address | Status |
 |---|---|---|
-| `AgentRegistry` | [`0x8aD47542EBbd92696E7C69E756bdf654d867581d`](https://testnet.arcscan.app/address/0x8aD47542EBbd92696E7C69E756bdf654d867581d) | live; `registerAgent` + `recordDecision` + `resolveDecision` all exercised, reputation 0 → 10 |
+| `AgentRegistry` | [`0x8aD47542EBbd92696E7C69E756bdf654d867581d`](https://testnet.arcscan.app/address/0x8aD47542EBbd92696E7C69E756bdf654d867581d) | live; `registerAgent` + `recordDecision` + `resolveDecision` exercised, reputation 0 → 10 |
 | `MarketFactory` | [`0x9C36Aa5fa856893Ae70E33014985678E4Ce198AD`](https://testnet.arcscan.app/address/0x9C36Aa5fa856893Ae70E33014985678E4Ce198AD) | live; `createMarket` exercised; 1 market deployed |
-| `CopyTradeMarket` (ETH/USDC) | [`0xaef1bac4a9660bABCc78304580E1ea67749f0351`](https://testnet.arcscan.app/address/0xaef1bac4a9660bABCc78304580E1ea67749f0351) | live; `stake` + `settle` exercised; JobCreated/Funded/Submitted/Completed all emitted |
+| `CopyTradeMarket` (ETH/USDC) | [`0xaef1bac4a9660bABCc78304580E1ea67749f0351`](https://testnet.arcscan.app/address/0xaef1bac4a9660bABCc78304580E1ea67749f0351) | live; `stake` + `settle` exercised; ERC-8183 full lifecycle emitted |
+| `UsycRouter` | [`0xAC5b39B7a5F4df7888B3A1a2cDf65e3ad2C28bb8`](https://testnet.arcscan.app/address/0xAC5b39B7a5F4df7888B3A1a2cDf65e3ad2C28bb8) | live; swaps USDC↔USYC on RISK_OFF regime signal |
+| `PredictionOracle` | [`0xbe64545c5e4A6e5a3D7cEEb58e1bb1a8C7C0E2B1`](https://testnet.arcscan.app/address/0xbe64545c5e4A6e5a3D7cEEb58e1bb1a8C7C0E2B1) | live; 3 questions seeded (ETH > $3k, BTC halving impact, Fed rate cut) |
 
-9 signed transactions across deploy + 6 function calls — full ERC-8004 + ERC-8183 lifecycle verified on-chain. Reproduce with `npm run verify:arc-deployments` (zero gas), `npm run exercise:arc-agent` (3 real tx), `npm run exercise:arc-market` (3 real tx).
+15+ signed transactions across deploy + function calls — full ERC-8004 + ERC-8183 lifecycle verified on-chain. Reproduce with `npm run verify:arc-deployments` (zero gas), `npm run exercise:arc-agent` (3 real tx), `npm run exercise:arc-market` (3 real tx).
 
 **Legacy Arc Testnet deployment** (still live for the original 12-tab demo flow):
 
@@ -339,6 +350,11 @@ state. Nothing is ever fabricated.
 | **Galxe quest** | Free | static manifest | `docs/galxe-quest.json` | (operator dashboard) |
 | **Polymarket Gamma data** | Free public | none | `src/lib/polymarket.ts` | (Predictions tab UI) |
 | **Polymarket CLOB exec scaffold** | Free (dry-run) | `POLYMARKET_PRIVATE_KEY` · `POLYMARKET_DRY_RUN` (default `true`) | `server/src/polymarket-exec.ts` | `GET /api/polymarket/status` · `POST /api/polymarket/intent` |
+| **Polymarket Kelly intent** (agent loop) | Free (dry-run) | `PREDICTION_BANKROLL_USDC` (default $20) | `server/src/arc-agent-loop.ts` | embedded in decision payload + `lastLoopStatus` |
+| **dYdX v4** (read-only positions) | Free public indexer | `VITE_DYDX_ADDRESS` | `src/lib/exchanges/dydx.ts` | (Perp Trading tab) |
+| **GMX v2 Arbitrum** (read-only positions) | Free public stats | `VITE_GMX_AGENT_ADDRESS` | `src/lib/exchanges/gmx.ts` | (Perp Trading tab) |
+| **The Graph subgraph** | Free hosted service | `GRAPH_DEPLOY_KEY` · `GRAPH_SUBGRAPH_NAME` | `subgraph/` | (deploy via `npm run deploy:studio`) |
+| **Galxe quest** | Free | `VITE_GALXE_CAMPAIGN_ID` | `src/components/widgets/agora/ArcGalxeQuestWidget.tsx` | (Developer Console) |
 
 ### Paid vs free summary
 
@@ -422,7 +438,7 @@ VITE_POSTHOG_HOST=https://us.i.posthog.com
 ## Verification
 
 ```bash
-# Frontend (103 tests)
+# Frontend (122 tests)
 npm test
 npx tsc --noEmit
 npm run build
@@ -434,8 +450,9 @@ cd contracts && npx hardhat compile
 # Standalone agent package
 cd packages/arcmind-agent && npx tsc --noEmit
 
-# Server (130 tests across LLM routing, exchanges, Pyth, alerts, Circle,
-# Pinata, Farcaster, Apify, Polymarket exec, arb scanner, traction, etc.)
+# Server (135 tests across LLM routing, exchanges, Pyth, alerts, Circle,
+# Pinata, Farcaster, Apify, Polymarket exec, arb scanner, traction,
+# Kelly intent math, regime classifier, degradation evaluator, etc.)
 cd server && npm test
 cd server && npm run typecheck
 ```
@@ -477,31 +494,65 @@ contracts/test/
 packages/arcmind-agent/             ElizaOS-compatible standalone agent
   src/character.ts                ArcMind character file
   src/providers/                  CoinGecko, Hyperliquid OI, leader feed
-  src/actions/                    decideEthDirection, recordOnChain
-  src/evaluators/                 decisionAccuracyEvaluator
+  src/actions/                    decideEthDirection, recordOnChain, predictionBet (Kelly)
+  src/evaluators/                 decisionAccuracy, degradation (7d win-rate)
   src/service/arcMindService.ts   30-min decision loop
   src/types.ts                    Local shim of @elizaos/core types
-  README.md                       Migration guide
+
+subgraph/                         The Graph AssemblyScript subgraph
+  schema.graphql                  Agent, Market, Decision, Settlement, Slash entities
+  src/agent-registry.ts           AgentRegistered, DecisionRecorded/Resolved, AgentSlashed
+  src/market-factory.ts           MarketDeployed
+  src/copy-trade-market.ts        Staked, Settled
+
+infra/hermes/                     Hermes self-hosted agent runner
+  install.sh                      One-line installer (docker backend)
+  skills/arcmind.yaml             ArcMind exposed as a Hermes skill (MCP-compatible)
 
 src/lib/
   hyperliquid.ts                  Hyperliquid Info API client (vaults/leaderboard)
   cctp.ts                         CCTP intent + fee estimator (Mirror flow)
   marketFactory.ts                Read-only client for the on-chain factory
-  agora.ts                        Arc helpers + ERC-8183 lifecycle reader
+  agora.ts                        Arc helpers + ERC-8183 lifecycle reader + Paymaster
+  exchanges/dydx.ts               dYdX v4 read-only positions (Cosmos indexer)
+  exchanges/gmx.ts                GMX v2 Arbitrum read-only positions
+  predictionOracle.ts             PredictionOracle.sol reader (native Arc markets)
+  polymarket.ts                   Polymarket Gamma API client
+  analytics.ts                    PostHog fire-and-forget (env-gated)
 
 src/components/widgets/agora/
   ArcDiscoverWidget.tsx           Discover tab (native markets + Hyperliquid leaderboard)
   ArcAgentDetailWidget.tsx        Agent profile page (portfolio sparkline, reasoning)
   ArcMindOverviewWidget.tsx       ArcMind hero + position card
   ArcMindAlgorithmProfile.tsx     "Who am I copying?" shared card
-  ArcMindWidgets.tsx              Copy & Position + reasoning trace widgets
+  ArcMindWidgets.tsx              Copy & Position + LLM Debate Room
+  ArcTractionWidget.tsx           Live traction strip (on-chain event counts)
+  ArbScannerWidget.tsx            Real-time arb opportunities (SSE)
+  ArcPerpTradingWidget.tsx        dYdX v4 + GMX v2 read-only positions
+  ArcPredictionsWidget.tsx        Polymarket events + native Arc prediction markets
+  ArcSlashLeaderboardWidget.tsx   ERC-8004 slash-bonded leaderboard
+  ArcGalxeQuestWidget.tsx         Galxe Pioneer NFT quest checklist
+  ArcMultiExchangeWidget.tsx      Cross-platform positions panel
+  ArcDeveloperConsoleWidget.tsx   15 collapsible power-user sections
   CrossChainMirrorModal.tsx       CCTP intent flow
   JobLifecycleViewer.tsx          ERC-8183 Open/Funded/Submitted/Terminal viewer
-  ArcDeveloperConsoleWidget.tsx   13 collapsible power-user sections
+
+server/src/
+  arc-agent-loop.ts               Autonomous loop: regime + degradation + Kelly + on-chain record
+  arc-control.ts                  Budget / policy / positions / risk gate state machine
+  exchanges.ts                    OKX, Coinbase, Binance, Hyperliquid ticker cache
+  arb-scanner.ts                  Multi-venue spread scanner + SSE emitter
+  pyth.ts                         Pyth Network Hermes price decoder
+  alerts.ts                       Shared Discord + Telegram dispatcher (10-min dedup)
+  farcaster.ts                    Neynar cast bot (auto-cast on BUY/SELL)
+  apify.ts                        CryptoPanic + Twitter trends scraper
+  pinata.ts                       IPFS pinning for decision traces
+  llm.ts                          OpenRouter → Anthropic → Hermes routing chain
+  polymarket-exec.ts              Polymarket CLOB intent recorder (dry-run default)
+  circle.ts                       Circle Paymaster + Programmable Wallets
 
 src/pages/WorkspacePage.tsx       Agora tab dispatcher
-src/workspaces/agora/             Workspace module
-server/src/                       Express backend (SQLite control state, x402 gateway)
+src/workspaces/agora/             Workspace module (12-tab TAB_MAP)
 ```
 
 ## Links
