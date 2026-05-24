@@ -11,6 +11,7 @@ import {
 } from "../../../lib/arbitrum";
 import type { NetworkMode } from "../../../lib/chains";
 import { ActionPanel } from "../ActionPanel";
+import { fundingReceiptPayload, ARB_FUNDING_SCOPE } from "../../../workspaces/arbitrum/funding";
 
 const headStyle: CSSProperties = { fontSize: ".6rem", textTransform: "uppercase", letterSpacing: ".08em", color: "var(--muted)", fontWeight: 700 };
 const inputStyle: CSSProperties = { padding: "8px 10px", borderRadius: 9, border: "1px solid var(--line-2)", background: "var(--bg-2)", color: "var(--ink)", fontSize: ".84rem" };
@@ -63,7 +64,8 @@ export function ArbitrumEscrowPanel({ workspace }: { workspace: Workspace }) {
       const res = await openEscrow({ payee: payee.trim(), amountEthStr: amount, deadlineSec, refHex }, netMode);
       setLast({ id: res.id, txHash: res.txHash });
       push({ id: res.id, txHash: res.txHash, payee: payee.trim(), amountEth: amount, deadline: deadlineSec, at: new Date().toISOString(), state: "Open" });
-      emitReceipt({ workspaceId: workspace.id, serviceName: "AgentEscrow · Open (Arbitrum Sepolia)", amount: 0, currency: "ETH", network: workspace.networks[0] ?? "arbitrum-sepolia", kind: "arb.escrow.open", payload: { escrowId: res.id, payee: payee.trim(), amountEth: amount, deadlineSec, ref: refHex, txHash: res.txHash, explorerUrl: res.explorerUrl, contract: res.contract, chainHex: res.chainHex }, status: "verified" });
+      // Escrow funding mode — funds are held on-chain, not spent from the Agent Treasury.
+      emitReceipt({ workspaceId: workspace.id, serviceName: "AgentEscrow · Open (Arbitrum Sepolia)", amount: 0, currency: "ETH", network: workspace.networks[0] ?? "arbitrum-sepolia", kind: "arb.escrow.open", payload: fundingReceiptPayload(ARB_FUNDING_SCOPE, parseFloat(amount) || 0, { mode: "escrow", serviceId: "svc_arb_escrow", settlement: "live" }, { escrowId: res.id, payee: payee.trim(), amountEth: amount, deadlineSec, ref: refHex, txHash: res.txHash, explorerUrl: res.explorerUrl, contract: res.contract, chainHex: res.chainHex }), status: "verified" });
     } catch (e) { setErr((e as { message?: string }).message ?? "Open failed"); } finally { setBusy(false); }
   };
 
@@ -74,7 +76,8 @@ export function ArbitrumEscrowPanel({ workspace }: { workspace: Workspace }) {
       const fn = kind === "release" ? releaseEscrow : kind === "refund" ? refundEscrow : cancelEscrow;
       const res = await fn(id, netMode);
       patch(id, kind === "release" ? "Released" : "Refunded");
-      emitReceipt({ workspaceId: workspace.id, serviceName: `AgentEscrow · ${kind[0].toUpperCase()}${kind.slice(1)} #${id}`, amount: 0, currency: "ETH", network: workspace.networks[0] ?? "arbitrum-sepolia", kind: `arb.escrow.${kind}`, payload: { escrowId: id, txHash: res.txHash, explorerUrl: res.explorerUrl }, status: "verified" });
+      // Explicit escrow state transition (release / refund / cancel) — never a treasury deduction.
+      emitReceipt({ workspaceId: workspace.id, serviceName: `AgentEscrow · ${kind[0].toUpperCase()}${kind.slice(1)} #${id}`, amount: 0, currency: "ETH", network: workspace.networks[0] ?? "arbitrum-sepolia", kind: `arb.escrow.${kind}`, payload: fundingReceiptPayload(ARB_FUNDING_SCOPE, 0, { mode: "escrow", serviceId: "svc_arb_escrow", settlement: "live" }, { escrowId: id, txHash: res.txHash, explorerUrl: res.explorerUrl }), status: "verified" });
     } catch (e) { setErr((e as { message?: string }).message ?? `${kind} failed`); } finally { setActing(null); }
   };
 

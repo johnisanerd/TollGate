@@ -6,6 +6,12 @@ import { useLocalStore } from "../../../lib/storage";
 import { hashId } from "../../../lib/util-hash";
 import { getQieConfig } from "../../../lib/qie";
 import { useNetworkMode, type NetworkMode } from "../../../hooks/useNetworkMode";
+import {
+  checkFunding,
+  fundingReceiptPayload,
+  recordFundingSpend,
+  QIE_FUNDING_SCOPE,
+} from "../funding";
 
 // AgentScore → QIElend credit line widget.
 // Beats NeuroCred (2025 QIE winner): real x402 receipts as score basis, no off-chain ML.
@@ -63,6 +69,9 @@ export function QieCreditWidget({ workspace }: { workspace: Workspace }) {
   const [done, setDone] = useState(false);
   const [repaying, setRepaying] = useState(false);
   const [onChainLine, setOnChainLine] = useState<number | null>(null);
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
+
+  const CREDIT_PAY_COST_USD = 0.02;
 
   useEffect(() => { fetchOnChainCreditLine(mode).then(setOnChainLine); }, [mode]);
 
@@ -79,6 +88,15 @@ export function QieCreditWidget({ workspace }: { workspace: Workspace }) {
 
   async function runDemo() {
     if (running) return;
+    // Treasury preflight — the agent borrows QIE then autonomously pays
+    // svc_qie_checkout; block the paid leg unless the QIE Treasury has a
+    // signed allowance.
+    const fc = checkFunding(QIE_FUNDING_SCOPE, CREDIT_PAY_COST_USD, { mode: "treasury", serviceId: "svc_qie_checkout" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the QIE Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setRunning(true);
     setDone(false);
     const STEPS: Omit<DemoStep, "done">[] = [
@@ -96,7 +114,8 @@ export function QieCreditWidget({ workspace }: { workspace: Workspace }) {
     const nb: BorrowRecord = { id: "brw_" + hid(String(Date.now())), amount: 2, service: "svc_qie_checkout", ts: new Date().toLocaleTimeString(), repaid: false };
     setBorrows((prev) => [nb, ...prev.slice(0, 4)]);
     setBorrowed((b) => +(b + 2).toFixed(4));
-    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_qie_credit", serviceName: "QIE Agent Credit · Borrow", amount: 2, currency: "QIE" as const, network: workspace.networks[0] ?? "qie-testnet", kind: "qie.credit.borrow", payload: { score, tier, limitQie, borrowedQie: 2 } });
+    recordFundingSpend(QIE_FUNDING_SCOPE, CREDIT_PAY_COST_USD, { mode: "treasury", serviceId: "svc_qie_checkout", settlement: "fallback" });
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_qie_credit", serviceName: "QIE Agent Credit · Borrow", amount: 2, currency: "QIE" as const, network: workspace.networks[0] ?? "qie-testnet", kind: "qie.credit.borrow", payload: fundingReceiptPayload(QIE_FUNDING_SCOPE, CREDIT_PAY_COST_USD, { mode: "treasury", serviceId: "svc_qie_checkout", settlement: "fallback" }, { score, tier, limitQie, borrowedQie: 2 }) });
     setDone(true);
     setRunning(false);
   }
@@ -163,6 +182,12 @@ export function QieCreditWidget({ workspace }: { workspace: Workspace }) {
           )}
         </div>
       </div>
+
+      {fundingErr && (
+        <div style={{ padding: "9px 12px", background: "#f59e0b12", borderRadius: 10, border: "1px solid #f59e0b44", fontSize: ".72rem", color: "#fbbf24", fontWeight: 600 }}>
+          {fundingErr}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 10 }}>
         <button type="button" onClick={runDemo} disabled={running || tier === "Bronze"} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: running || tier === "Bronze" ? "var(--bg-3)" : col, color: running || tier === "Bronze" ? "var(--muted)" : "#0a0a0b", fontWeight: 800, fontSize: ".85rem", cursor: running || tier === "Bronze" ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>

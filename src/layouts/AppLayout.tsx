@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu } from "lucide-react";
@@ -110,14 +110,6 @@ export function AppLayout() {
             </motion.div>
           </AnimatePresence>
         </div>
-        <footer style={{ borderTop: "1px solid rgba(255,255,255,0.06)", padding: "16px 40px", display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap", fontSize: ".7rem", color: "#475569" }}>
-          <span style={{ fontWeight: 700, color: "#64748b" }}>TollGate · x402 Payment Router</span>
-          <a href="/live" style={{ color: "#475569", textDecoration: "none" }} target="_blank" rel="noreferrer">ArcMind Live ↗</a>
-          <a href="/fleet" style={{ color: "#475569", textDecoration: "none" }}>Fleet View ↗</a>
-          <a href="/showcase" style={{ color: "#475569", textDecoration: "none" }}>Receipt Showcase ↗</a>
-          <a href="https://agora.thecanteenapp.com" target="_blank" rel="noreferrer" style={{ color: "#475569", textDecoration: "none" }}>Hackathon ↗</a>
-          <span style={{ marginLeft: "auto", opacity: .5 }}>Built on Arc L1 · Circle x402 · 2026</span>
-        </footer>
       </main>
 
       <PaymentModal
@@ -130,3 +122,4 @@ export function AppLayout() {
     </div>
   );
 }
+

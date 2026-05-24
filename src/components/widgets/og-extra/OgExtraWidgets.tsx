@@ -10,9 +10,16 @@ import { deterministicScore, hashId, sha256Hex } from "../../../lib/util-hash";
 import { uploadToOgStorage, anchorReceiptOnChain, isOgRegistryConfigured, runOgInference } from "../../../lib/og";
 import { gatewayPay, API_ENABLED } from "../../../lib/api";
 import { WidgetMeta } from "../../ui/Motion";
+import {
+  checkFunding,
+  fundingReceiptPayload,
+  recordFundingSpend,
+  type FundingScope,
+} from "../../../workspaces/0g/funding";
 
 const hid = (s: string) => hashId("0g", s);
 const now = () => new Date().toLocaleTimeString();
+const OG_AGENT_FUNDING_SCOPE: FundingScope = { workspaceId: "0g", agentId: "agent_marketplace_consumer", project: "0g" };
 
 // ─── 1. OpenClaw Skill Console ───────────────────────────────────────────────
 
@@ -64,6 +71,13 @@ export function OpenClawSkillConsole({ workspace }: { workspace: Workspace }) {
   const tpl = SKILL_TEMPLATES[tplIdx];
 
   async function runSkill() {
+    const priceUsd = parseFloat(tpl.manifest.price);
+    const serviceId = tpl.name === "Storage Pin" ? "svc_0g_storage" : "svc_0g_inference";
+    const funding = checkFunding(OG_AGENT_FUNDING_SCOPE, priceUsd, { mode: "treasury", serviceId });
+    if (!funding.ok) {
+      setLog(`Blocked before 0G paid skill: ${funding.reason}. Fund 0G Agent Treasury in the A2A Marketplace first.`);
+      return;
+    }
     setBusy(true);
     setLog("Registering skill with OpenClaw orchestrator…");
     await new Promise((r) => setTimeout(r, 500));
@@ -84,7 +98,6 @@ export function OpenClawSkillConsole({ workspace }: { workspace: Workspace }) {
       if (og.ok) {
         result = og.content.slice(0, 240);
         serverPayload = { ogCompute: true, provider: og.provider, chatID: og.chatID, verified: og.verified, content: og.content };
-        gatewayReal = true;
         ogReal = true;
         setLog(`0G Compute · ${og.provider.slice(0, 10)}…${og.verified ? " · verified" : ""}`);
       }
@@ -95,7 +108,7 @@ export function OpenClawSkillConsole({ workspace }: { workspace: Workspace }) {
       if (API_ENABLED) {
         setLog("x402 challenge issued · payment verifying…");
         try {
-          const unlocked = await gatewayPay("svc_0g_inference", { agentId: "agent_0g_jobs" });
+          const unlocked = await gatewayPay("svc_0g_inference", { agentId: "agent_marketplace_consumer", proof: { workspaceId: "0g", fundingMode: "treasury" } });
           serverPayload = unlocked.data;
           result = JSON.stringify(unlocked.data).slice(0, 120);
           gatewayReal = true;
@@ -117,19 +130,29 @@ export function OpenClawSkillConsole({ workspace }: { workspace: Workspace }) {
       }
     }
 
+    recordFundingSpend(OG_AGENT_FUNDING_SCOPE, priceUsd, {
+      mode: "treasury",
+      serviceId,
+      settlement: gatewayReal ? "live" : "fallback",
+    });
+
     emitReceipt({
       workspaceId: workspace.id,
-      serviceId: "svc_0g_inference",
+      serviceId,
       serviceName: `OpenClaw · ${tpl.manifest.skill}`,
       agentName: "0G Compute Agent",
       payerWallet: "0x0E437c109A4C1e15172c4dA557E77724D7243F71",
       providerWallet: "0xF4BFd93061B160Fa376c7F66De207a00225B4e70",
-      amount: parseFloat(tpl.manifest.price),
+      amount: gatewayReal ? priceUsd : 0,
       currency: "USDC",
       network: "0g-galileo",
       status: "verified",
       kind: "0g.openclaw",
-      payload: { skill: tpl.manifest.skill, prompt, result, jobId, gatewayReal, ogCompute: ogReal },
+      payload: fundingReceiptPayload(OG_AGENT_FUNDING_SCOPE, priceUsd, {
+        mode: "treasury",
+        serviceId,
+        settlement: gatewayReal ? "live" : "fallback",
+      }, { skill: tpl.manifest.skill, prompt, result, jobId, gatewayReal, ogCompute: ogReal, displayAmount: priceUsd }),
     });
 
     setJobs((prev) => [{ id: jobId, skill: tpl.manifest.skill, status: "done", result, ts: now(), serverPayload, gatewayReal }, ...prev.slice(0, 9)]);
@@ -154,7 +177,7 @@ export function OpenClawSkillConsole({ workspace }: { workspace: Workspace }) {
 
       <WidgetMeta
         live={API_ENABLED}
-        what="a result for the chosen skill (risk score / blob id …) plus a settled x402 receipt — find it in the Receipts tab."
+        what="a result for the chosen skill (risk score / blob id …). A live x402 receipt is issued only when the gateway settles; local/compute-only results are marked fallback and do not spend treasury."
         enter="pick a skill template (left), optionally open & edit its manifest JSON, then type the job prompt / payload."
         liveText="x402 server reachable — this is a real gateway call"
         demoText="no x402 server reachable — result is a deterministic demo; run server/ and set VITE_API_BASE for a real gateway response"
@@ -357,6 +380,12 @@ export function DePinBulkPin({ workspace }: { workspace: Workspace }) {
   const registryConfigured = isOgRegistryConfigured();
 
   async function bulkPin() {
+    const priceUsd = 0.05 * count;
+    const funding = checkFunding(OG_AGENT_FUNDING_SCOPE, priceUsd, { mode: "treasury", serviceId: "svc_0g_storage" });
+    if (!funding.ok) {
+      setLog(`Blocked before 0G storage pin: ${funding.reason}. Fund 0G Agent Treasury in the A2A Marketplace first.`);
+      return;
+    }
     setBusy(true);
     setProgress(0);
     setPendingRoots(null);
@@ -369,13 +398,22 @@ export function DePinBulkPin({ workspace }: { workspace: Workspace }) {
       setProgress(Math.round(((i + 1) / count) * 100));
       setLog(`Pinning blob ${i + 1} / ${count}…`);
       const content = JSON.stringify({ blob: i, ts: Date.now() });
-      const result = await uploadToOgStorage(content);
-      blobs.push({ root: result.root, simulated: result.simulated });
+      try {
+        const result = await uploadToOgStorage(content);
+        blobs.push({ root: result.root, simulated: result.simulated });
+      } catch {
+        blobs.push({ root: "err_" + i, simulated: true });
+      }
     }
 
     const totalBytes = count * size;
     const rootsPreview = blobs.slice(0, 3).map((b) => b.root.slice(0, 12) + "…").join(", ");
     const allSimulated = blobs.every((b) => b.simulated);
+    recordFundingSpend(OG_AGENT_FUNDING_SCOPE, priceUsd, {
+      mode: "treasury",
+      serviceId: "svc_0g_storage",
+      settlement: allSimulated ? "fallback" : "live",
+    });
     const run: BulkPin = {
       id: "bulk_" + hid(String(Date.now())), count, totalBytes,
       rootsPreview, ts: now(), simulated: allSimulated,
@@ -389,12 +427,16 @@ export function DePinBulkPin({ workspace }: { workspace: Workspace }) {
       agentName: "0G Compute Agent",
       payerWallet: "0x0E437c109A4C1e15172c4dA557E77724D7243F71",
       providerWallet: "0x0GStorage…1a2b",
-      amount: 0.05 * count,
+      amount: allSimulated ? 0 : priceUsd,
       currency: "USDC",
       network: "0g-galileo",
       status: "verified",
       kind: "0g.depin.bulk",
-      payload: { count, totalBytes, roots: blobs.slice(0, 5).map((b) => b.root), allSimulated },
+      payload: fundingReceiptPayload(OG_AGENT_FUNDING_SCOPE, priceUsd, {
+        mode: "treasury",
+        serviceId: "svc_0g_storage",
+        settlement: allSimulated ? "fallback" : "live",
+      }, { count, totalBytes, roots: blobs.slice(0, 5).map((b) => b.root), allSimulated, displayAmount: priceUsd }),
     });
     setLog(`Done · ${count} blobs · ${(totalBytes / 1024).toFixed(1)} KB total${allSimulated ? " (simulated roots — set VITE_0G_STORAGE_INDEXER)" : " (real 0G roots)"}`);
     setProgress(0);

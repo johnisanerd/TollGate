@@ -12,6 +12,12 @@ import {
   qieExplorerTxUrl,
 } from "../../../lib/qie";
 import { useWallet } from "../../../wallet";
+import {
+  checkFunding,
+  fundingReceiptPayload,
+  recordFundingSpend,
+  QIE_FUNDING_SCOPE,
+} from "../../../workspaces/qie/funding";
 
 const hid = (s: string) => hashId("qie", s);
 const now = () => new Date().toLocaleTimeString();
@@ -47,10 +53,20 @@ export function QiePosWidget({ workspace }: { workspace: Workspace }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [txErr, setTxErr] = useState<string | null>(null);
   const [showEmbed, setShowEmbed] = useState(false);
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
 
   const configured = isQieCheckoutConfigured();
+  const POS_COST_USD = 0.01;
 
   async function generate() {
+    // Treasury preflight — the merchant bot provisions a hosted 402 endpoint;
+    // block the paid action unless the QIE Treasury has a signed allowance.
+    const fc = checkFunding(QIE_FUNDING_SCOPE, POS_COST_USD, { mode: "treasury", serviceId: "svc_qie_pos" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the QIE Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setBusy(true);
     setTxErr(null);
     await new Promise((r) => setTimeout(r, 400));
@@ -86,6 +102,8 @@ export function QiePosWidget({ workspace }: { workspace: Workspace }) {
     const cfg: PosConfig = { id, merchantName, itemName, price, currency, snippet, ts: now(), invoiceTx, invoiceId, explorerUrl };
     setConfigs((prev) => [cfg, ...prev.slice(0, 9)]);
     setActiveId(id);
+    const settlement = invoiceTx ? "live" : "fallback";
+    recordFundingSpend(QIE_FUNDING_SCOPE, POS_COST_USD, { mode: "treasury", serviceId: "svc_qie_pos", settlement });
     emitReceipt({
       workspaceId: workspace.id,
       serviceId: "svc_qie_checkout",
@@ -98,7 +116,7 @@ export function QiePosWidget({ workspace }: { workspace: Workspace }) {
       network: "qie-testnet",
       status: "verified",
       kind: "qie.pos.generate",
-      payload: { posId: id, merchantName, itemName, price, currency, invoiceTx },
+      payload: fundingReceiptPayload(QIE_FUNDING_SCOPE, POS_COST_USD, { mode: "treasury", serviceId: "svc_qie_pos", settlement }, { posId: id, merchantName, itemName, price, currency, invoiceTx }),
     });
     setBusy(false);
   }
@@ -170,6 +188,7 @@ export function QiePosWidget({ workspace }: { workspace: Workspace }) {
             </button>
           </div>
 
+          {fundingErr && <div style={{ fontSize: ".72rem", color: "#fbbf24", padding: "6px 10px", background: "#f59e0b12", border: "1px solid #f59e0b44", borderRadius: 6 }}>{fundingErr}</div>}
           {txErr && <div style={{ fontSize: ".72rem", color: "#e05", padding: "6px 10px", background: "#e0500a11", borderRadius: 6 }}>{txErr}</div>}
 
           {/* Payment link hero — the real user result */}
@@ -443,10 +462,20 @@ export function MerchantPayoutsPanel({ workspace }: { workspace: Workspace }) {
   const [payouts, setPayouts] = useLocalStore<MerchantPayout[]>("qie.merchant.payouts", []);
   const [busy, setBusy] = useState<string | null>(null);
   const [txErrors, setTxErrors] = useState<Record<string, string>>({});
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
 
   const configured = isQieCheckoutConfigured();
+  const PAYOUT_COST_USD = 0.02;
 
   async function payout(m: typeof DEMO_MERCHANTS[0]) {
+    // Treasury preflight — batch-settling a merchant payout is an autonomous
+    // paid action; block it unless the QIE Treasury has a signed allowance.
+    const fc = checkFunding(QIE_FUNDING_SCOPE, PAYOUT_COST_USD, { mode: "treasury", serviceId: "svc_qie_payout" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the QIE Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setBusy(m.name);
     setTxErrors((prev) => ({ ...prev, [m.name]: "" }));
     await new Promise((r) => setTimeout(r, 400));
@@ -485,6 +514,8 @@ export function MerchantPayoutsPanel({ workspace }: { workspace: Workspace }) {
       { id: hid(seed + "id"), merchant: m.name, sales: m.sales, grossQie: m.grossQie, feeQie, netQie, txHash, ts: now(), explorerUrl, real },
       ...prev.slice(0, 19),
     ]);
+    const settlement = real ? "live" : "fallback";
+    recordFundingSpend(QIE_FUNDING_SCOPE, PAYOUT_COST_USD, { mode: "treasury", serviceId: "svc_qie_payout", settlement });
     emitReceipt({
       workspaceId: workspace.id,
       serviceId: "svc_qie_checkout",
@@ -497,7 +528,7 @@ export function MerchantPayoutsPanel({ workspace }: { workspace: Workspace }) {
       network: "qie-testnet",
       status: "verified",
       kind: "qie.merchant.payout",
-      payload: { merchant: m.name, sales: m.sales, grossQie: m.grossQie, feeQie, netQie, txHash, real },
+      payload: fundingReceiptPayload(QIE_FUNDING_SCOPE, PAYOUT_COST_USD, { mode: "treasury", serviceId: "svc_qie_payout", settlement }, { merchant: m.name, sales: m.sales, grossQie: m.grossQie, feeQie, netQie, txHash, real }),
     });
     setBusy(null);
   }
@@ -517,6 +548,12 @@ export function MerchantPayoutsPanel({ workspace }: { workspace: Workspace }) {
       {!configured && (
         <div className="muted sm" style={{ marginBottom: 10, padding: "8px 10px", border: "1px dashed var(--border-subtle)", borderRadius: 8 }}>
           Contract not deployed yet — run <code>npm run deploy:qie</code> and set <code>VITE_QIE_CHECKOUT_ADDRESS</code> to enable real on-chain splits.
+        </div>
+      )}
+
+      {fundingErr && (
+        <div style={{ marginBottom: 10, padding: "9px 11px", borderRadius: 8, border: "1px solid #f59e0b44", background: "#f59e0b12", color: "#fbbf24", fontSize: 11 }}>
+          {fundingErr}
         </div>
       )}
 

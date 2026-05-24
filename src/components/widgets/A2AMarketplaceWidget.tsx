@@ -13,9 +13,19 @@ import React, { type CSSProperties, useEffect, useState } from "react";
 import { Award, CheckCircle, Database, ExternalLink, Lock, Search, ShieldCheck, Zap } from "lucide-react";
 import { AgentScoreComparison } from "./AgentScoreBadge";
 import { ActionPanel } from "./ActionPanel";
-import { checkBudget, spend, getPolicy, getRemainingToday } from "../../lib/budget";
+import {
+  checkFunding,
+  fundTreasury,
+  getFundingPolicy,
+  getRemainingToday,
+  getTreasuryState,
+  recordFundingSpend,
+  requestTreasuryAllowanceSignature,
+  type FundingScope,
+  type TreasuryState,
+} from "../../workspaces/0g/funding";
 import { updateReputation } from "../../lib/agentCard";
-import { API_BASE, API_ENABLED } from "../../lib/api";
+import { API_BASE, API_ENABLED, gatewayPay } from "../../lib/api";
 import { runOgInference, uploadToOgStorage } from "../../lib/og";
 
 type StepStatus = "idle" | "running" | "done" | "failed";
@@ -25,6 +35,9 @@ type AgentScoreInfo = { score: number; tier: string; receiptCount: number };
 const PROVIDER_ID = "agent_marketplace_provider";
 const CONSUMER_ID = "agent_marketplace_consumer";
 const SERVICE_ID  = "svc_marketplace_sentiment";
+const REQUIRED_SPEND_USD = 0.02;
+const DEFAULT_TOP_UP_USD = 1;
+const OG_FUNDING_SCOPE: FundingScope = { workspaceId: "0g", agentId: CONSUMER_ID, project: "0g" };
 
 const TIER_COLORS: Record<string, string> = {
   Bronze: "#b45309", Silver: "#94a3b8", Gold: "#eab308", Platinum: "#60a5fa",
@@ -47,8 +60,8 @@ const lbl: CSSProperties = {
 const INITIAL_STEPS: Step[] = [
   { id: "register",  label: "Provider registers service",          icon: "provider", status: "idle" },
   { id: "discover",  label: "Consumer discovers cheapest",         icon: "search",   status: "idle" },
-  { id: "budget",    label: "AgentBudget policy check",            icon: "pay",      status: "idle" },
-  { id: "pay",       label: "Consumer pays $0.02 x402",            icon: "pay",      status: "idle" },
+  { id: "budget",    label: "0G Agent Treasury + policy check",    icon: "pay",      status: "idle" },
+  { id: "pay",       label: "Consumer pays $0.02 x402 if live",    icon: "pay",      status: "idle" },
   { id: "deliver",   label: "Provider delivers via 0G Compute",    icon: "deliver",  status: "idle" },
   { id: "anchor",    label: "Receipt + memory anchored on-chain",  icon: "anchor",   status: "idle" },
 ];
@@ -72,7 +85,10 @@ export function A2AMarketplaceWidget() {
   const [providerScore, setProviderScore] = useState<AgentScoreInfo | null>(null);
   const [consumerScore, setConsumerScore] = useState<AgentScoreInfo | null>(null);
   const [receiptId, setReceiptId] = useState<string | null>(null);
-  const [remaining, setRemaining] = useState(() => getRemainingToday(CONSUMER_ID));
+  const [remaining, setRemaining] = useState(() => getRemainingToday(OG_FUNDING_SCOPE));
+  const [treasury, setTreasury] = useState<TreasuryState>(() => getTreasuryState(OG_FUNDING_SCOPE));
+  const [funding, setFunding] = useState(false);
+  const [fundingMsg, setFundingMsg] = useState<string | null>(null);
   const [sealedMode, setSealedMode] = useState(false);
 
   // Self-funding economy counters
@@ -84,6 +100,21 @@ export function A2AMarketplaceWidget() {
   function addLog(msg: string) { setLog((p) => [...p, msg]); }
   function setStep(id: string, status: StepStatus, detail?: string) {
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, status, detail: detail ?? s.detail } : s)));
+  }
+
+  async function approveTreasuryAllowance() {
+    setFunding(true);
+    setFundingMsg(null);
+    try {
+      const sig = await requestTreasuryAllowanceSignature(OG_FUNDING_SCOPE, DEFAULT_TOP_UP_USD);
+      fundTreasury(OG_FUNDING_SCOPE, DEFAULT_TOP_UP_USD, sig);
+      setTreasury(getTreasuryState(OG_FUNDING_SCOPE));
+      setFundingMsg(`0G Agent Treasury funded with signed $${DEFAULT_TOP_UP_USD.toFixed(2)} allowance.`);
+    } catch {
+      setFundingMsg("Treasury allowance was not signed. 0G autonomous calls remain blocked.");
+    } finally {
+      setFunding(false);
+    }
   }
 
   async function fetchScore(agentId: string): Promise<AgentScoreInfo | null> {
@@ -108,13 +139,13 @@ export function A2AMarketplaceWidget() {
     await sleep(900);
     try {
       const svc = { serviceId: SERVICE_ID, name: "Sentiment Analysis", priceUsd: 0.02,
-        network: "arbitrum-sepolia", endpoint: `${API_BASE || "https://tollgate-1.onrender.com"}/api/gateway/${SERVICE_ID}`,
+        network: "0g-galileo", endpoint: `${API_BASE || "https://tollgate-1.onrender.com"}/api/gateway/${SERVICE_ID}`,
         provider: PROVIDER_ID, registeredAt: new Date().toISOString() };
       const existing = JSON.parse(localStorage.getItem("registry.services") ?? "[]") as typeof svc[];
       localStorage.setItem("registry.services", JSON.stringify([svc, ...existing.filter((s) => s.serviceId !== SERVICE_ID)]));
     } catch { /* ignore */ }
-    setStep("register", "done", "svc_marketplace_sentiment · $0.02/req · Arbitrum Sepolia");
-    addLog("✓ ServiceRegistered event emitted on Arbitrum Sepolia");
+    setStep("register", "done", "svc_marketplace_sentiment · $0.02/req · 0G Galileo");
+    addLog("✓ ServiceRegistered event emitted for 0G Galileo workspace");
     await sleep(300);
 
     // Step 2: Consumer discovers
@@ -127,31 +158,52 @@ export function A2AMarketplaceWidget() {
 
     // Step 3: Budget check
     setStep("budget", "running");
-    const policy = getPolicy(CONSUMER_ID);
-    addLog(`Consumer: AgentBudget.checkAndSpend(${CONSUMER_ID}, $0.02) · daily limit $${policy.dailyLimitUsd.toFixed(2)}…`);
+    const policy = getFundingPolicy(OG_FUNDING_SCOPE);
+    addLog(`Consumer: 0G AgentTreasury.authorize(${CONSUMER_ID}, $0.02) · daily limit $${policy.dailyLimitUsd.toFixed(2)}…`);
     await sleep(600);
-    const budgetResult = checkBudget(CONSUMER_ID, 0.02);
+    const budgetResult = checkFunding(OG_FUNDING_SCOPE, REQUIRED_SPEND_USD, { mode: "treasury", serviceId: SERVICE_ID });
     if (!budgetResult.ok) {
       setStep("budget", "failed", `Blocked: ${budgetResult.reason}`);
-      addLog(`✗ Budget check failed: ${budgetResult.reason}`);
+      addLog(`✗ 0G Agent Treasury blocked payment: ${budgetResult.reason}`);
       return; // try/finally below resets `running` and step state
     }
-    setStep("budget", "done", `Approved — $${getRemainingToday(CONSUMER_ID).toFixed(2)} remaining after`);
-    addLog("✓ AgentBudget: $0.02 approved, within daily limit");
+    setStep("budget", "done", `Approved — $${getTreasuryState(OG_FUNDING_SCOPE).availableUsd.toFixed(2)} available before spend`);
+    addLog("✓ 0G Agent Treasury: $0.02 approved by signed allowance + policy");
     await sleep(300);
 
     // Step 4: Pay x402
     setStep("pay", "running");
-    addLog("Consumer: sending X-PAYMENT header to gateway…");
+    addLog("Consumer: sending X-PAYMENT header to 0G gateway…");
     await sleep(1100);
-    spend(CONSUMER_ID, 0.02);
-    const rid = `rcpt_${Math.random().toString(36).slice(2, 12)}`;
+    let paymentLive = false;
+    let rid = `a2a_local_${Math.random().toString(36).slice(2, 12)}`;
+    try {
+      if (!API_ENABLED) throw new Error("api_base_missing");
+      const unlocked = await gatewayPay("svc_0g_inference", {
+        agentId: CONSUMER_ID,
+        proof: { workspaceId: "0g", serviceId: SERVICE_ID, fundingMode: "treasury" },
+      });
+      rid = unlocked.receiptId;
+      paymentLive = true;
+    } catch {
+      paymentLive = false;
+    }
+    recordFundingSpend(OG_FUNDING_SCOPE, REQUIRED_SPEND_USD, {
+      mode: "treasury",
+      serviceId: SERVICE_ID,
+      settlement: paymentLive ? "live" : "fallback",
+    });
     setReceiptId(rid);
-    setRemaining(getRemainingToday(CONSUMER_ID));
-    setEarned(0.02);
-    setStep("pay", "done", `Receipt ${rid.slice(0, 14)}… · $0.02 USDC settled`);
-    addLog(`✓ Payment verified — receipt ${rid}`);
-    updateReputation(CONSUMER_ID, { amountUsd: 0.02, success: true });
+    setRemaining(getRemainingToday(OG_FUNDING_SCOPE));
+    setTreasury(getTreasuryState(OG_FUNDING_SCOPE));
+    setEarned(paymentLive ? REQUIRED_SPEND_USD : 0);
+    setStep("pay", "done", paymentLive
+      ? `Receipt ${rid.slice(0, 14)}… · $0.02 USDC settled`
+      : `Local receipt ${rid.slice(0, 14)}… · no live USDC moved`);
+    addLog(paymentLive
+      ? `✓ Payment verified — receipt ${rid}`
+      : `✓ Local fallback receipt — treasury was not deducted and no live settlement is claimed`);
+    updateReputation(CONSUMER_ID, { amountUsd: paymentLive ? REQUIRED_SPEND_USD : 0, success: true });
     await sleep(300);
 
     // Step 5: Provider delivers via 0G Compute
@@ -256,11 +308,15 @@ export function A2AMarketplaceWidget() {
   function reset() {
     setSteps(INITIAL_STEPS.map((s) => ({ ...s, status: "idle" as StepStatus, detail: undefined })));
     setLog([]); setDone(false); setReceiptId(null);
-    setRemaining(getRemainingToday(CONSUMER_ID));
+    setRemaining(getRemainingToday(OG_FUNDING_SCOPE));
+    setTreasury(getTreasuryState(OG_FUNDING_SCOPE));
     setStorageRoot(null); setEarned(0); setComputeCost(0);
   }
 
-  useEffect(() => { setRemaining(getRemainingToday(CONSUMER_ID)); }, []);
+  useEffect(() => {
+    setRemaining(getRemainingToday(OG_FUNDING_SCOPE));
+    setTreasury(getTreasuryState(OG_FUNDING_SCOPE));
+  }, []);
 
   const netProfit = earned - computeCost;
 
@@ -268,8 +324,32 @@ export function A2AMarketplaceWidget() {
     <ActionPanel
       icon={<Zap size={15} />}
       title="Live A2A Marketplace — Full Autonomous Flow"
-      sub={<>Provider registers → Consumer discovers → pays x402 → <strong>0G Compute inference</strong> → memory pinned to 0G Storage. <strong>Zero human clicks.</strong></>}
+      sub={<>Provider registers → Consumer discovers → 0G Agent Treasury authorizes → pays x402 if live → <strong>0G Compute inference</strong> → memory pinned to 0G Storage.</>}
     >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 8, marginBottom: 14 }}>
+        {[
+          { label: "0G Treasury", val: `$${treasury.availableUsd.toFixed(2)} USDC` },
+          { label: "Required spend", val: `$${REQUIRED_SPEND_USD.toFixed(2)} USDC` },
+          { label: "Daily policy", val: `$${getFundingPolicy(OG_FUNDING_SCOPE).dailyLimitUsd.toFixed(2)} / day` },
+          { label: "Max per call", val: `$${getFundingPolicy(OG_FUNDING_SCOPE).maxPerCallUsd.toFixed(2)}` },
+        ].map((g) => (
+          <div key={g.label} style={{ background: "var(--bg-2)", borderRadius: 9, padding: "8px 10px" }}>
+            <div style={lbl}>{g.label}</div>
+            <div style={{ fontWeight: 700, fontSize: ".82rem", marginTop: 2 }}>{g.val}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(96,165,250,.28)", background: "rgba(96,165,250,.08)" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+          <span style={{ fontSize: ".72rem", color: "#dbeafe", lineHeight: 1.5 }}>
+            0G consumer agent has no hot wallet. It can only spend from this workspace-scoped treasury; Arc treasury cannot fund this flow.
+          </span>
+          <button className="btn sm" onClick={approveTreasuryAllowance} disabled={funding} style={{ fontSize: ".7rem" }}>
+            {funding ? "Waiting for wallet…" : `Sign $${DEFAULT_TOP_UP_USD.toFixed(2)} 0G treasury allowance`}
+          </button>
+        </div>
+        {fundingMsg && <div style={{ marginTop: 8, fontSize: ".68rem", color: fundingMsg.includes("not signed") ? "#fca5a5" : "#86efac" }}>{fundingMsg}</div>}
+      </div>
       {/* Sealed mode toggle */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, padding: "8px 12px", borderRadius: 9, background: "var(--bg-2)", border: sealedMode ? "1px solid #60a5fa" : "1px solid var(--line-2)" }}>
         <Lock size={11} color={sealedMode ? "#60a5fa" : "var(--muted)"} />
@@ -289,7 +369,7 @@ export function A2AMarketplaceWidget() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
         {[
           { id: PROVIDER_ID, label: "Provider Agent", role: "Registers & delivers services · earns USDC", score: providerScore },
-          { id: CONSUMER_ID, label: "Consumer Agent", role: `Budget: $${remaining.toFixed(2)} remaining today`, score: consumerScore },
+          { id: CONSUMER_ID, label: "Consumer Agent", role: `0G Treasury remaining today: $${remaining.toFixed(2)}`, score: consumerScore },
         ].map((a) => (
           <div key={a.id} style={{ background: "var(--bg-2)", borderRadius: 10, padding: "10px 12px" }}>
             <div style={lbl}>{a.label}</div>
@@ -412,7 +492,7 @@ export function A2AMarketplaceWidget() {
       )}
 
       <p style={{ margin: "12px 0 0", fontSize: ".73rem", color: "var(--muted)", lineHeight: 1.55 }}>
-        On-chain stack: <code>ServiceRegistry</code> → <code>AgentBudget</code> → <code>x402 gateway</code> → <code>0G Compute{sealedMode ? " (TEE)" : ""}</code> → <code>0G Storage</code> → <code>AgentReceiptRegistry</code>. No human approval.
+        On-chain stack: <code>0G AgentTreasury</code> → <code>ServiceRegistry</code> → <code>AgentBudget</code> → <code>x402 gateway</code> → <code>0G Compute{sealedMode ? " (TEE)" : ""}</code> → <code>0G Storage</code> → <code>AgentReceiptRegistry</code>. No shared Arc balance and no agent-owned hot wallet.
       </p>
     </ActionPanel>
   );

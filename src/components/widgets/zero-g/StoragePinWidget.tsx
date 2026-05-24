@@ -115,41 +115,46 @@ export function StoragePinWidget({ workspace }: { workspace: Workspace }) {
     if (!content.trim() || stage === "pinning") return;
     setStage("pinning");
     setAnchorErr(null);
-    const hash = await sha256Hex(content);
-    const storage = await uploadToOgStorage(content);
-    const isMem = mode === "snapshot";
-    const gen = isMem ? genFor(agent.agentId) : undefined;
-    const blob: PinnedBlob = {
-      id: hashId("pin", hash, 10),
-      name: name.trim() || "untitled.bin",
-      hash, size, content,
-      kind: isMem ? "memory" : "pin",
-      agentId: isMem ? agent.agentId : undefined,
-      generation: gen,
-      storageRoot: storage.root,
-      storageSimulated: storage.simulated,
-      storageMerkle: storage.merkleComputed,
-      storageOnChain: storage.onChain,
-      createdAt: new Date().toISOString(),
-    };
-    const r = emitReceipt({
-      workspaceId: workspace.id,
-      serviceName: isMem ? `0G Storage · Agent Memory (${agent.name})` : "0G Storage · Pin",
-      amount: Number(cost.toFixed(5)),
-      currency: "USDC",
-      network: workspace.networks[0] ?? "0g-galileo",
-      kind: isMem ? "0g.memory.snapshot" : "0g.pin",
-      payload: {
-        hash, name: blob.name, size, blobId: blob.id,
+    try {
+      const hash = await sha256Hex(content);
+      const storage = await uploadToOgStorage(content);
+      const isMem = mode === "snapshot";
+      const gen = isMem ? genFor(agent.agentId) : undefined;
+      const blob: PinnedBlob = {
+        id: hashId("pin", hash, 10),
+        name: name.trim() || "untitled.bin",
+        hash, size, content,
+        kind: isMem ? "memory" : "pin",
+        agentId: isMem ? agent.agentId : undefined,
+        generation: gen,
         storageRoot: storage.root,
-        storageMode: storage.onChain ? "0g-onchain" : storage.merkleComputed ? "0g-merkle" : "simulated",
-        ...(isMem ? { agentId: agent.agentId, generation: gen } : {}),
-      },
-    });
-    blob.receiptId = r.id;
-    setBlobs((prev) => [blob, ...prev].slice(0, 24));
-    setLastPinned(blob);
-    setStage("done");
+        storageSimulated: storage.simulated,
+        storageMerkle: storage.merkleComputed,
+        storageOnChain: storage.onChain,
+        createdAt: new Date().toISOString(),
+      };
+      const r = emitReceipt({
+        workspaceId: workspace.id,
+        serviceName: isMem ? `0G Storage · Agent Memory (${agent.name})` : "0G Storage · Pin",
+        amount: Number(cost.toFixed(5)),
+        currency: "USDC",
+        network: workspace.networks[0] ?? "0g-galileo",
+        kind: isMem ? "0g.memory.snapshot" : "0g.pin",
+        payload: {
+          hash, name: blob.name, size, blobId: blob.id,
+          storageRoot: storage.root,
+          storageMode: storage.onChain ? "0g-onchain" : storage.merkleComputed ? "0g-merkle" : "simulated",
+          ...(isMem ? { agentId: agent.agentId, generation: gen } : {}),
+        },
+      });
+      blob.receiptId = r.id;
+      setBlobs((prev) => [blob, ...prev].slice(0, 24));
+      setLastPinned(blob);
+      setStage("done");
+    } catch (e) {
+      setAnchorErr((e as { message?: string }).message ?? "Pin failed");
+      setStage("idle");
+    }
   };
 
   const anchorBlob = async (b: PinnedBlob) => {

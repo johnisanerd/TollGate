@@ -8,5 +8,19 @@
   "explorer": "https://testnet.arcscan.app",
   "deployedAt": "2026-05-15T11:17:57.048Z",
   "regTxHash": null,
-  "escrowTxHash": null
+  "escrowTxHash": null,
+  "controlLayer": {
+    "operator": "0x82736f84Ad234566180F902237e2Fb4c35177bDB",
+    "agentTreasury": "0x4Cf79c89cFd85F788f6A0d8A27e0552902622869",
+    "strategyVault": "0xdBB4b61fC5Cbc2A456d56aFfF79a27e5155106d0",
+    "riskGuard": "0x0F066C8280E67F88B1c7959595E229541aFc531c",
+    "receiptRegistry": "0xB5F9Ca1350c3EDA3FB2f0C0b7398C88BA2310693",
+    "txHashes": {
+      "agentTreasury": "0x8c63125019a06ea7a7824404b295482e04651c3d4367c9587e88a37b20678bde",
+      "strategyVault": "0x5ca07be91893873902570f7c1687383730a843c9e2129ddfdf6e5ac4683dd9a8",
+      "riskGuard": "0x77cf4954eff56663d67178d4a654f6f71d4e3ebe653e1bf9e329bd2d29d6b4e4",
+      "receiptRegistry": "0x1852e2aa052e906f874648f347e388f5bc43d37b2247c5783628eea3ebd1ac85"
+    },
+    "deployedAt": "2026-05-21T18:34:15.074Z"
+  }
 }

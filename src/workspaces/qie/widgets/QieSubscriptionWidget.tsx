@@ -3,6 +3,12 @@ import { Package, Star, CheckCircle2, Loader2, Crown, Zap } from "lucide-react";
 import type { Workspace } from "../../../types";
 import { useAppState } from "../../../app-state";
 import { useLocalStore } from "../../../lib/storage";
+import {
+  checkFunding,
+  fundingReceiptPayload,
+  recordFundingSpend,
+  QIE_FUNDING_SCOPE,
+} from "../funding";
 
 // QIE Pass-gated subscription bundles. Tier discount: Silver 10% / Gold 20% / Platinum 30%.
 // Competes in QIE Ecosystem Champion track (6/6 components covered: Wallet+Pass+DEX+QUSDC+QIElend+Oracle).
@@ -71,6 +77,9 @@ export function QieSubscriptionWidget({ workspace }: { workspace: Workspace }) {
   const [running, setRunning] = useState<BundleId | null>(null);
   const [steps, setSteps] = useState<DemoStep[]>([]);
   const [done, setDone] = useState(false);
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
+
+  const SUB_COST_USD = 0.02;
 
   const wsReceipts = receipts.filter((r) => r.workspaceId === workspace.id);
   const count = wsReceipts.length;
@@ -81,6 +90,14 @@ export function QieSubscriptionWidget({ workspace }: { workspace: Workspace }) {
 
   async function subscribe(bundle: Bundle) {
     if (running) return;
+    // Treasury preflight — activating a subscription is an autonomous recurring
+    // charge; block it unless the QIE Treasury has a signed allowance.
+    const fc = checkFunding(QIE_FUNDING_SCOPE, SUB_COST_USD, { mode: "treasury", serviceId: "svc_qie_checkout" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the QIE Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setRunning(bundle.id);
     setDone(false);
     const finalPrice = +(bundle.priceQie * (1 - discount)).toFixed(2);
@@ -98,6 +115,7 @@ export function QieSubscriptionWidget({ workspace }: { workspace: Workspace }) {
     }
     setActiveBundle(bundle.id);
     setExpiry(addDays(30));
+    recordFundingSpend(QIE_FUNDING_SCOPE, SUB_COST_USD, { mode: "treasury", serviceId: "svc_qie_checkout", settlement: "fallback" });
     emitReceipt({
       workspaceId: workspace.id,
       serviceId: "svc_qie_subscription",
@@ -106,7 +124,7 @@ export function QieSubscriptionWidget({ workspace }: { workspace: Workspace }) {
       currency: "QIE" as const,
       network: workspace.networks[0] ?? "qie-testnet",
       kind: "qie.subscription.activate",
-      payload: { bundleId: bundle.id, callsPerMonth: bundle.callsPerMonth, passTier, discount, finalPrice, expiresAt: addDays(30) },
+      payload: fundingReceiptPayload(QIE_FUNDING_SCOPE, SUB_COST_USD, { mode: "treasury", serviceId: "svc_qie_checkout", settlement: "fallback" }, { bundleId: bundle.id, callsPerMonth: bundle.callsPerMonth, passTier, discount, finalPrice, expiresAt: addDays(30) }),
     });
     setDone(true);
     setRunning(null);
@@ -138,6 +156,12 @@ export function QieSubscriptionWidget({ workspace }: { workspace: Workspace }) {
           <span style={{ fontSize: ".78rem", fontWeight: 700, color: "#f59e0b" }}>
             {passTier} Pass active — {(discount * 100).toFixed(0)}% discount applied automatically
           </span>
+        </div>
+      )}
+
+      {fundingErr && (
+        <div style={{ padding: "9px 12px", background: "#f59e0b12", borderRadius: 10, border: "1px solid #f59e0b44", fontSize: ".72rem", color: "#fbbf24", fontWeight: 600 }}>
+          {fundingErr}
         </div>
       )}
 

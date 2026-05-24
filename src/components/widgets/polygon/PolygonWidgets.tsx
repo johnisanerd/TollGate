@@ -11,6 +11,8 @@ import { useLocalStore } from "../../../lib/storage";
 import { deterministicScore, hashId } from "../../../lib/util-hash";
 import { getPolygonConfig } from "../../../lib/polygon";
 import { useNetworkMode } from "../../../hooks/useNetworkMode";
+import { checkFunding, requestWalletPerCallSignature } from "../../../workspaces/polygon/funding";
+import { POLY_FUNDING_SCOPE } from "../../../workspaces/polygon/funding";
 
 // ── Trade Finance — SME Invoice Factoring ───────────────────────────────────────
 
@@ -32,12 +34,17 @@ export function PolygonTradeFinanceWidget({ workspace }: { workspace: Workspace 
   const [amount, setAmount] = useState("50000");
   const [submitting, setSubmitting] = useState(false);
   const [funding, setFunding] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   const totalFunded = invoices.filter(i => i.status === "funded").reduce((s, i) => s + i.advance, 0);
 
   async function submitInvoice() {
     const amtNum = safeAmt(amount, 10_000_000);
     if (!amtNum) { return; }
+    // Invoice scoring is an autonomous agent call — gated by the Polygon Merchant Treasury.
+    const preflight = checkFunding(POLY_FUNDING_SCOPE, 0.10, { mode: "treasury", serviceId: "svc_poly_invoice" });
+    if (!preflight.ok) { setErr(`Invoice scoring blocked — ${preflight.reason}. Sign a treasury allowance first.`); return; }
+    setErr(null);
     setSubmitting(true);
     await new Promise(r => setTimeout(r, 1600));
     const id = hashId("inv", `${Date.now()}`).slice(0, 12);
@@ -51,6 +58,15 @@ export function PolygonTradeFinanceWidget({ workspace }: { workspace: Workspace 
   }
 
   async function fundInvoice(id: string) {
+    const target = invoices.find(i => i.id === id);
+    // Funding an invoice moves capital — manual wallet action, never the Agent Treasury.
+    try {
+      await requestWalletPerCallSignature(POLY_FUNDING_SCOPE, target?.advance ?? 0, "svc_poly_invoice");
+    } catch {
+      setErr("Wallet signature required — invoice not funded. Capital movement is a manual wallet action.");
+      return;
+    }
+    setErr(null);
     setFunding(id);
     await new Promise(r => setTimeout(r, 1400));
     setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status: "funded" } : inv));
@@ -106,7 +122,13 @@ export function PolygonTradeFinanceWidget({ workspace }: { workspace: Workspace 
             You will receive: <strong style={{ color: "#7B3FE4" }}>${(parseFloat(amount || "0") * 0.8).toFixed(0)} USDC</strong> advance · repay ${amount} at due date
           </div>
         )}
+        <div style={{ fontSize: 10, color: "var(--text-secondary)", marginTop: 6 }}>
+          Scoring runs on the Agent Treasury · funding an invoice is a manual wallet payment
+        </div>
       </div>
+      {err && (
+        <div style={{ marginBottom: 12, padding: "7px 12px", borderRadius: 8, background: "#EF44441a", border: "1px solid #EF444433", color: "#EF4444", fontSize: 11, fontWeight: 600 }}>{err}</div>
+      )}
 
       {invoices.length > 0 && (
         <div className="svc-table__scroll">
@@ -159,6 +181,7 @@ export function PolygonUsdcPaymentsWidget({ workspace }: { workspace: Workspace 
   const [corridor, setCorridor] = useState(0);
   const [amount, setAmount] = useState("10000");
   const [sending, setSending] = useState(false);
+  const [sendErr, setSendErr] = useState<string | null>(null);
   const [transfers, setTransfers] = useLocalStore<{ from: string; to: string; amount: number; hash: string; ts: string }[]>(
     `polygon-usdc-${workspace.id}`, []
   );
@@ -171,6 +194,14 @@ export function PolygonUsdcPaymentsWidget({ workspace }: { workspace: Workspace 
 
   async function sendPayment() {
     if (!safeAmt(amount, 100_000_000)) return;
+    // Cross-border remittance execution — manual wallet action, needs a per-call signature.
+    try {
+      await requestWalletPerCallSignature(POLY_FUNDING_SCOPE, ourCost, "svc_poly_cross");
+    } catch {
+      setSendErr("Wallet signature required — remittance not sent. Manual wallet payment, never the Agent Treasury.");
+      return;
+    }
+    setSendErr(null);
     setSending(true);
     await new Promise(r => setTimeout(r, 2200));
     const hash = hashId("usdc", `${Date.now()}`).slice(0, 18);
@@ -223,6 +254,9 @@ export function PolygonUsdcPaymentsWidget({ workspace }: { workspace: Workspace 
           {sending ? <><Loader2 size={13} className="wallet-spin" /> Sending…</> : <><Send size={13} /> Send</>}
         </button>
       </div>
+      {sendErr && (
+        <div style={{ marginBottom: 12, padding: "7px 12px", borderRadius: 8, background: "#EF44441a", border: "1px solid #EF444433", color: "#EF4444", fontSize: 11, fontWeight: 600 }}>{sendErr}</div>
+      )}
 
       {transfers.length > 0 && (
         <div className="svc-table__scroll">
@@ -260,11 +294,19 @@ export function PolygonAgentMarketplaceWidget({ workspace }: { workspace: Worksp
   );
   const [calling, setCalling] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
+  const [callErr, setCallErr] = useState<string | null>(null);
 
   const tags = ["all", ...Array.from(new Set(AGENT_SERVICES.map(s => s.tag)))];
   const filtered = filter === "all" ? AGENT_SERVICES : AGENT_SERVICES.filter(s => s.tag === filter);
 
   async function callAgent(svc: typeof AGENT_SERVICES[0]) {
+    // Agent marketplace service call — autonomous, gated by the Polygon Merchant Treasury.
+    const preflight = checkFunding(POLY_FUNDING_SCOPE, svc.price, { mode: "treasury", serviceId: "svc_poly_merchant" });
+    if (!preflight.ok) {
+      setCallErr(`Agent call blocked — ${preflight.reason}. Sign a treasury allowance first.`);
+      return;
+    }
+    setCallErr(null);
     setCalling(svc.id);
     await new Promise(r => setTimeout(r, 900 + deterministicScore(svc.id, 0, 800)));
     const hash = hashId("poly", `${svc.id}-${Date.now()}`).slice(0, 16);
@@ -289,6 +331,9 @@ export function PolygonAgentMarketplaceWidget({ workspace }: { workspace: Worksp
           </button>
         ))}
       </div>
+      {callErr && (
+        <div style={{ marginBottom: 12, padding: "7px 12px", borderRadius: 8, background: "#EF44441a", border: "1px solid #EF444433", color: "#EF4444", fontSize: 11, fontWeight: 600 }}>{callErr}</div>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
         {filtered.map(svc => (
@@ -436,6 +481,7 @@ export function PolygonMerchantOnboardingWidget({ workspace }: { workspace: Work
   const [apiDesc, setApiDesc] = useState("");
   const [price, setPrice] = useState("0.10");
   const [deploying, setDeploying] = useState(false);
+  const [deployErr, setDeployErr] = useState<string | null>(null);
   const [deployed, setDeployed] = useLocalStore<{ name: string; address: string; endpoint: string; ts: string } | null>(
     `polygon-merchant-${workspace.id}`, null
   );
@@ -443,6 +489,14 @@ export function PolygonMerchantOnboardingWidget({ workspace }: { workspace: Work
 
   async function deploy() {
     if (!safeAmt(price, 10_000)) return;
+    // Merchant contract deploy — manual wallet action, never the Agent Treasury.
+    try {
+      await requestWalletPerCallSignature(POLY_FUNDING_SCOPE, 0, "svc_poly_merchant");
+    } catch {
+      setDeployErr("Wallet signature required — merchant contract not deployed.");
+      return;
+    }
+    setDeployErr(null);
     setDeploying(true);
     await new Promise(r => setTimeout(r, 2000));
     const escrow = getPolygonConfig(mode).escrowAddress ?? `0x${hashId("merchant", `${name}`).slice(0, 40)}`;
@@ -528,6 +582,9 @@ export function PolygonMerchantOnboardingWidget({ workspace }: { workspace: Work
           <button className="btn btn-acc" onClick={deploy} disabled={deploying}>
             {deploying ? <><Loader2 size={13} className="wallet-spin" /> Deploying ServiceRegistry contract…</> : <><BadgeCheck size={13} /> Deploy &amp; Go Live</>}
           </button>
+          {deployErr && (
+            <div style={{ padding: "7px 12px", borderRadius: 8, background: "#EF44441a", border: "1px solid #EF444433", color: "#EF4444", fontSize: 11, fontWeight: 600 }}>{deployErr}</div>
+          )}
         </div>
       )}
     </div>

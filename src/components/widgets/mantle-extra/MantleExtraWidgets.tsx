@@ -8,6 +8,7 @@ import { useLocalStore } from "../../../lib/storage";
 import { deterministicScore, hashId, sha256Hex } from "../../../lib/util-hash";
 import { vaultRecordDecision, isMantleVaultConfigured, getCreditRecord, getCreditRecordCached, isMantleCreditConfigured, recordAgentPayment, mantleExplorerTxUrl, fetchMantleApys, fetchMantleGasPrice, fetchTotalAgentCount, getBudget, isBudgetControllerConfigured, type CreditRecord, type BudgetState } from "../../../lib/mantle";
 import { fetchPrices } from "../../../lib/prices";
+import { checkFunding, fundingReceiptPayload, requestWalletPerCallSignature, MNT_FUNDING_SCOPE } from "../../../workspaces/mantle/funding";
 
 const hid = (s: string) => hashId("mnt", s);
 const now = () => new Date().toLocaleTimeString();
@@ -63,34 +64,22 @@ export function StrategyDeployPanel({ workspace }: { workspace: Workspace }) {
   const [busy, setBusy] = useState(false);
   const [deployErr, setDeployErr] = useState<string | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
-  const tickRef = useRef(0);
-
   const vaultConfigured = isMantleVaultConfigured();
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      tickRef.current += 1;
-      const tick = tickRef.current;
-      setStrategies((prev) =>
-        prev.map((s) => {
-          if (s.status !== "active") return s;
-          const seed = s.id + String(tick);
-          const delta = deterministicScore(seed, -1.2, 2.1);
-          const sigs = ["BUY +0.15", "HOLD", "SELL -0.08", "BUY +0.22", "HOLD"];
-          const sig = sigs[Math.floor(deterministicScore(seed + "sig", 0, sigs.length - 0.01))];
-          const pnl = Math.round((s.pnl + delta) * 100) / 100;
-          return { ...s, ticks: s.ticks + 1, lastSignal: sig, pnl, pnlHistory: [...(s.pnlHistory ?? [0]), pnl].slice(-48) };
-        })
-      );
-    }, 3000);
-    return () => clearInterval(id);
-  }, [setStrategies]);
 
   const selected = strategies.find((s) => s.id === selId) ?? strategies[0] ?? null;
 
   async function deploy() {
     setBusy(true);
     setDeployErr(null);
+    // Manual strategy deploy — needs a per-call wallet signature, never the Agent Treasury.
+    try {
+      await requestWalletPerCallSignature(MNT_FUNDING_SCOPE, 0.15, "svc_mnt_backtest");
+    } catch {
+      setDeployErr("Wallet signature required — strategy not deployed. Manual wallet action; never the Agent Treasury.");
+      setBusy(false);
+      return;
+    }
     await new Promise((r) => setTimeout(r, 600));
     const pair = ASSET_PAIRS[pairIdx];
     const id = "strat_" + hid(name + pair.label + String(Date.now()));
@@ -116,17 +105,14 @@ export function StrategyDeployPanel({ workspace }: { workspace: Workspace }) {
     setSelId(id);
     emitReceipt({
       workspaceId: workspace.id,
-      serviceId: "svc_mantle_alpha",
+      serviceId: "svc_mnt_backtest",
       serviceName: `Strategy Deploy · ${name}`,
-      agentName: "Mantle Strategy Agent",
-      payerWallet: "0xMntAg…aa1",
-      providerWallet: "0xMntGW…1b2c",
       amount: 0.15,
       currency: "MNT",
       network: "mantle-mainnet",
       status: "verified",
       kind: "mantle.strategy.deploy",
-      payload: { strategyId: id, name, pair: pair.label, anchorTx },
+      payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, 0.15, { mode: "wallet_per_call", serviceId: "svc_mnt_backtest", settlement: "live" }, { strategyId: id, name, pair: pair.label, anchorTx }),
     });
     setBusy(false);
   }
@@ -556,21 +542,24 @@ export function WhaleAlertFeed({ workspace }: { workspace: Workspace }) {
   }
 
   function start() {
+    // Autonomous whale-alert subscription — gated by the Mantle Agent Treasury.
+    const preflight = checkFunding(MNT_FUNDING_SCOPE, 0.25, { mode: "treasury", serviceId: "svc_mnt_liq" });
+    if (!preflight.ok) {
+      setFetchErr(`Autonomous whale-alert subscription blocked — ${preflight.reason}. Sign a treasury allowance first.`);
+      return;
+    }
     setRunning(true);
     latestBlockRef.current = null;
     emitReceipt({
       workspaceId: workspace.id,
-      serviceId: "svc_mantle_alpha",
-      serviceName: "Whale Alert Subscription",
-      agentName: "Mantle Alpha Agent",
-      payerWallet: "0xMntAg…aa1",
-      providerWallet: "0xMntGW…1b2c",
-      amount: 0.25,
+      serviceId: "svc_mnt_liq",
+      serviceName: "Whale Alert Subscription (local)",
+      amount: 0,
       currency: "MNT",
       network: "mantle-mainnet",
-      status: "verified",
+      status: "pending",
       kind: "mantle.whale.subscribe",
-      payload: { minUsd },
+      payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, 0.25, { mode: "treasury", serviceId: "svc_mnt_liq", settlement: "fallback" }, { minUsd }),
     });
     void pollOnce();
     intervalRef.current = setInterval(() => { void pollOnce(); }, 12000); // ~1 Mantle block
@@ -867,6 +856,7 @@ export function AlphaBotWidget({ workspace }: { workspace: Workspace }) {
   const [running, setRunning] = useState(false);
   const [pairIdx, setPairIdx] = useState(0);
   const [anchorBusy, setAnchorBusy] = useState<string | null>(null);
+  const [botErr, setBotErr] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const runRef = useRef(running);
   useEffect(() => { runRef.current = running; }, [running]);
@@ -895,15 +885,17 @@ export function AlphaBotWidget({ workspace }: { workspace: Workspace }) {
       const cumulative = parseFloat(((prev[prev.length - 1] ?? 0) + pnl).toFixed(4));
       return [...prev, cumulative].slice(-48);
     });
+    // Bot trades are generated locally — fallback receipt (amount 0), no live settlement, no treasury deduction.
     emitReceipt({
       workspaceId: workspace.id,
-      serviceId: "svc_mnt_alpha",
-      serviceName: `Alpha Bot · ${action} ${pair}`,
-      amount: 0.04,
+      serviceId: "svc_mnt_meth",
+      serviceName: `Alpha Bot · ${action} ${pair} (local)`,
+      amount: 0,
       currency: "USDC",
       network: workspace.networks[0] ?? "mantle-sepolia",
+      status: "pending",
       kind: "mantle.alphabot.trade",
-      payload: { pair, action, price: trade.price, confidence: trade.confidence, receiptId: trade.receiptId, pnl: trade.pnl },
+      payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, 0.04, { mode: "treasury", serviceId: "svc_mnt_meth", settlement: "fallback" }, { pair, action, price: trade.price, confidence: trade.confidence, receiptId: trade.receiptId, pnl: trade.pnl }),
     });
   };
 
@@ -912,6 +904,13 @@ export function AlphaBotWidget({ workspace }: { workspace: Workspace }) {
       setRunning(false);
       if (intervalRef.current) clearInterval(intervalRef.current);
     } else {
+      // Autonomous trading bot — gated by the Mantle Agent Treasury.
+      const preflight = checkFunding(MNT_FUNDING_SCOPE, 0.04, { mode: "treasury", serviceId: "svc_mnt_meth" });
+      if (!preflight.ok) {
+        setBotErr(`Autonomous Alpha Bot blocked — ${preflight.reason}. Sign a treasury allowance first.`);
+        return;
+      }
+      setBotErr(null);
       setRunning(true);
       executeCycle();
       intervalRef.current = setInterval(() => {
@@ -958,6 +957,9 @@ export function AlphaBotWidget({ workspace }: { workspace: Workspace }) {
           {running ? <><Pause size={13} /> Stop</> : <><Play size={13} /> Start Bot</>}
         </button>
       </div>
+      {botErr && (
+        <div style={{ marginBottom: 12, padding: "7px 12px", borderRadius: 9, background: "color-mix(in srgb, var(--red) 12%, transparent)", color: "var(--red)", fontSize: ".74rem", fontWeight: 600 }}>{botErr}</div>
+      )}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
         {PAIRS.map((p, i) => (
@@ -1393,8 +1395,10 @@ export function YieldComparisonWidget(_: { workspace: Workspace }) {
     try {
       const data = await fetchMantleApys();
       setYields((prev) => prev.map((y) => {
-        if (y.label === "mETH") return { ...y, apy: data.mEthApy, source: "DeFiLlama" };
-        if (y.label === "USDY") return { ...y, apy: data.usdyApy, source: "DeFiLlama" };
+        if (y.label === "mETH")   return { ...y, apy: data.mEthApy,  source: "DeFiLlama" };
+        if (y.label === "USDY")   return { ...y, apy: data.usdyApy,  source: "DeFiLlama" };
+        if (y.label === "stETH")  return { ...y, apy: data.stEthApy, source: "DeFiLlama" };
+        if (y.label === "USDC.e") return { ...y, apy: data.usdceApy, source: "DeFiLlama" };
         return y;
       }));
       setLastUpdated(now());
@@ -1466,7 +1470,14 @@ export function MantleA2ALoopWidget({ workspace }: { workspace: Workspace }) {
 
   const run = async () => {
     if (running) return;
-    setRunning(true); setErr(null); setSteps([]);
+    setSteps([]);
+    // Autonomous agent-to-agent loop — gated by the Mantle Agent Treasury.
+    const preflight = checkFunding(MNT_FUNDING_SCOPE, 0.16, { mode: "treasury", serviceId: "svc_mnt_meth" });
+    if (!preflight.ok) {
+      setErr(`A2A loop blocked — ${preflight.reason}. Sign a treasury allowance first.`);
+      return;
+    }
+    setRunning(true); setErr(null);
 
     try {
       // Step 1: Strategist → DataFeed-Agent: pay for market data
@@ -1474,7 +1485,7 @@ export function MantleA2ALoopWidget({ workspace }: { workspace: Workspace }) {
       await new Promise((r) => setTimeout(r, 900));
       const priceTx = "0x" + hashId("p402", String(Date.now()), 64);
       updateStep("x402: fetch MNT/USDC price", { status: "done", txHash: priceTx });
-      emitReceipt({ workspaceId: workspace.id, serviceName: "A2A: DataFeed price fetch", amount: 0.04, currency: "USDC", network: "mantle-mainnet", kind: "mantle.a2a.datafeed", payload: { pair: "MNT/USDC" } });
+      emitReceipt({ workspaceId: workspace.id, serviceId: "svc_mnt_meth", serviceName: "A2A: DataFeed price fetch (local)", amount: 0, currency: "USDC", network: "mantle-mainnet", status: "pending", kind: "mantle.a2a.datafeed", payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, 0.04, { mode: "treasury", serviceId: "svc_mnt_meth", settlement: "fallback" }, { pair: "MNT/USDC" }) });
 
       // Step 2: Strategist makes decision
       addStep({ from: STRATEGIST, to: STRATEGIST, action: "Decision: BUY 50 MNT", amount: "0", status: "pending" });
@@ -1486,7 +1497,7 @@ export function MantleA2ALoopWidget({ workspace }: { workspace: Workspace }) {
       await new Promise((r) => setTimeout(r, 1000));
       const execTx = "0x" + hashId("exec402", String(Date.now()), 64);
       updateStep("x402: execute trade BUY 50 MNT", { status: "done", txHash: execTx });
-      emitReceipt({ workspaceId: workspace.id, serviceName: "A2A: Executor trade", amount: 0.12, currency: "USDC", network: "mantle-mainnet", kind: "mantle.a2a.execute", payload: { action: "BUY", qty: 50, asset: "MNT" } });
+      emitReceipt({ workspaceId: workspace.id, serviceId: "svc_mnt_meth", serviceName: "A2A: Executor trade (local)", amount: 0, currency: "USDC", network: "mantle-mainnet", status: "pending", kind: "mantle.a2a.execute", payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, 0.12, { mode: "treasury", serviceId: "svc_mnt_meth", settlement: "fallback" }, { action: "BUY", qty: 50, asset: "MNT" }) });
 
       // Step 4: Anchor decision on Mantle vault
       addStep({ from: STRATEGIST, to: "AgentVault", action: "recordDecision: BUY@0.345", amount: "0", status: "pending" });

@@ -404,20 +404,25 @@ export async function fetchMantleGasPrice(): Promise<string> {
 }
 
 /** Live APYs for mETH and USDY from DeFiLlama yields API. Falls back to protocol-published defaults. */
-export async function fetchMantleApys(): Promise<{ mEthApy: number; usdyApy: number }> {
+export async function fetchMantleApys(): Promise<{ mEthApy: number; usdyApy: number; stEthApy: number; usdceApy: number }> {
   try {
-    const r = await fetch("https://yields.llama.fi/pools", { signal: AbortSignal.timeout(6000) });
+    const r = await fetch("https://yields.llama.fi/pools", { signal: AbortSignal.timeout(8000) });
     if (!r.ok) throw new Error("llama " + r.status);
     const data = await r.json() as { data: Array<{ chain: string; symbol: string; apy: number }> };
-    const pools = data.data.filter((p) => p.chain === "Mantle");
-    const mEthPool = pools.find((p) => /meth/i.test(p.symbol));
-    const usdyPool = pools.find((p) => /usdy/i.test(p.symbol));
+    const mantlePools = data.data.filter((p) => p.chain === "Mantle");
+    const ethPools = data.data.filter((p) => p.chain === "Ethereum");
+    const mEthPool  = mantlePools.find((p) => /^meth$/i.test(p.symbol));
+    const usdyPool  = mantlePools.find((p) => /usdy/i.test(p.symbol));
+    const stEthPool = ethPools.find((p) => /^steth$/i.test(p.symbol));
+    const usdcePool = mantlePools.find((p) => /usdc\.?e/i.test(p.symbol));
     return {
-      mEthApy: mEthPool?.apy ? parseFloat(mEthPool.apy.toFixed(2)) : 3.9,
-      usdyApy: usdyPool?.apy ? parseFloat(usdyPool.apy.toFixed(2)) : 5.1,
+      mEthApy:  mEthPool?.apy  ? parseFloat(mEthPool.apy.toFixed(2))  : 3.9,
+      usdyApy:  usdyPool?.apy  ? parseFloat(usdyPool.apy.toFixed(2))  : 5.1,
+      stEthApy: stEthPool?.apy ? parseFloat(stEthPool.apy.toFixed(2)) : 3.2,
+      usdceApy: usdcePool?.apy ? parseFloat(usdcePool.apy.toFixed(2)) : 4.8,
     };
   } catch {
-    return { mEthApy: 3.9, usdyApy: 5.1 };
+    return { mEthApy: 3.9, usdyApy: 5.1, stEthApy: 3.2, usdceApy: 4.8 };
   }
 }
 

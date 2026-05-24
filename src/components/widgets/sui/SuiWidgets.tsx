@@ -10,6 +10,23 @@ import { useAppState } from "../../../app-state";
 import { useLocalStore } from "../../../lib/storage";
 import { deterministicScore, hashId } from "../../../lib/util-hash";
 import { fetchPrices } from "../../../lib/prices";
+import {
+  checkFunding,
+  fundingReceiptPayload,
+  recordFundingSpend,
+  SUI_FUNDING_SCOPE,
+  SUI_TREASURY_TOPUP_USD,
+} from "../../../workspaces/sui/funding";
+import { TreasuryPanel } from "../../../workspaces/sui/TreasuryPanel";
+
+/** Shared banner for a treasury-blocked Sui flow. */
+function FundingBlockedNote({ msg }: { msg: string }) {
+  return (
+    <div style={{ margin: "8px 0 0", padding: "9px 11px", borderRadius: 8, border: "1px solid #f59e0b44", background: "#f59e0b12", color: "#fbbf24", fontSize: 11 }}>
+      {msg}
+    </div>
+  );
+}
 
 const fmtSui = (n: number) => n.toFixed(4) + " SUI";
 const truncAddr = (a: string) => a.slice(0, 6) + "…" + a.slice(-4);
@@ -42,8 +59,17 @@ export function WalrusStorageWidget({ workspace }: { workspace: Workspace }) {
   const [sealEncrypt, setSealEncrypt] = useState(false);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState("");
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
+
+  const PIN_COST = 0.02;
 
   async function pin() {
+    const fc = checkFunding(SUI_FUNDING_SCOPE, PIN_COST, { mode: "treasury", serviceId: "svc_sui_walrus_pin" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setBusy(true);
     setLog("Encoding blob…");
     let bytes = new TextEncoder().encode(content) as Uint8Array<ArrayBuffer>;
@@ -86,6 +112,7 @@ export function WalrusStorageWidget({ workspace }: { workspace: Workspace }) {
     }
     const p: WalrusPin = { blobId, name, size, epochs, tx, ts: now(), sealed: sealEncrypt, keyId };
     setPins([p, ...pins.slice(0, 9)]);
+    recordFundingSpend(SUI_FUNDING_SCOPE, PIN_COST, { mode: "treasury", serviceId: "svc_sui_walrus_pin", settlement: "fallback" });
     emitReceipt({
       workspaceId: workspace.id,
       serviceId: "svc_sui_walrus_pin",
@@ -98,7 +125,9 @@ export function WalrusStorageWidget({ workspace }: { workspace: Workspace }) {
       network: "sui-mainnet",
       status: "verified",
       kind: "sui.walrus.pin",
-      payload: { blobId, name, size, epochs, tx, real, sealed: sealEncrypt, keyId },
+      payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, PIN_COST, {
+        mode: "treasury", serviceId: "svc_sui_walrus_pin", settlement: "fallback",
+      }, { blobId, name, size, epochs, tx, real, sealed: sealEncrypt, keyId }),
     });
     if (real) setLog(`Pinned on Walrus! blob ${blobId.slice(0, 20)}…${sealEncrypt ? " · Seal-encrypted" : ""}`);
     setBusy(false);
@@ -134,6 +163,7 @@ export function WalrusStorageWidget({ workspace }: { workspace: Workspace }) {
         {busy ? <Loader2 size={13} className="wallet-spin" /> : <Database size={13} />}
         {busy ? log : sealEncrypt ? "Encrypt + Pin to Walrus" : "Pin to Walrus"}
       </button>
+      {fundingErr && <FundingBlockedNote msg={fundingErr} />}
       {pins.length > 0 && (
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 6 }}>Pinned blobs ({pins.length})</div>
@@ -184,8 +214,19 @@ export function MoveContractViewer({ workspace }: { workspace: Workspace }) {
   const [dryRun, setDryRun] = useState(true);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState("");
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
+
+  const EXEC_COST = 0.015;
 
   async function execute() {
+    if (!dryRun) {
+      const fc = checkFunding(SUI_FUNDING_SCOPE, EXEC_COST, { mode: "treasury", serviceId: "svc_sui_move_exec" });
+      if (!fc.ok) {
+        setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+        return;
+      }
+    }
+    setFundingErr(null);
     setBusy(true);
     setLog(dryRun ? "Building PTB…" : "Signing & submitting…");
     await new Promise((r) => setTimeout(r, 500));
@@ -197,6 +238,7 @@ export function MoveContractViewer({ workspace }: { workspace: Workspace }) {
     const result: PtbResult = { module, fn, args, status: "success", gas, effects, ts: now(), submitted: !dryRun };
     setResults([result, ...results.slice(0, 9)]);
     if (!dryRun) {
+      recordFundingSpend(SUI_FUNDING_SCOPE, EXEC_COST, { mode: "treasury", serviceId: "svc_sui_move_exec", settlement: "fallback" });
       emitReceipt({
         workspaceId: workspace.id,
         serviceId: "svc_sui_move_exec",
@@ -209,7 +251,9 @@ export function MoveContractViewer({ workspace }: { workspace: Workspace }) {
         network: "sui-mainnet",
         status: "verified",
         kind: "sui.move.exec",
-        payload: { module, fn, args, gas, effects },
+        payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, EXEC_COST, {
+          mode: "treasury", serviceId: "svc_sui_move_exec", settlement: "fallback",
+        }, { module, fn, args, gas, effects }),
       });
     }
     setLog(dryRun ? `Dry-run OK · gas ${gas}` : `Submitted · ${effects.slice(0, 40)}…`);
@@ -253,6 +297,7 @@ export function MoveContractViewer({ workspace }: { workspace: Workspace }) {
         {busy ? <Loader2 size={13} className="wallet-spin" /> : <Code2 size={13} />}
         {busy ? log : dryRun ? "Dry-run PTB" : "Submit PTB (live)"}
       </button>
+      {fundingErr && <FundingBlockedNote msg={fundingErr} />}
       {results.length > 0 && (
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 6 }}>Execution history ({results.length})</div>
@@ -295,10 +340,19 @@ export function SuiNftMarket({ workspace }: { workspace: Workspace }) {
   const [recipient, setRecipient] = useState("0x0E437c109A4C1e15172c4dA557E77724D7243F71");
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState("");
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
 
   const selected = TIERS.find((t) => t.tier === mintTier)!;
 
+  const MINT_COST = 0.03;
+
   async function mint() {
+    const fc = checkFunding(SUI_FUNDING_SCOPE, MINT_COST, { mode: "treasury", serviceId: "svc_sui_nft_mint" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setBusy(true);
     setLog("Building mint PTB…");
     await new Promise((r) => setTimeout(r, 600));
@@ -309,6 +363,7 @@ export function SuiNftMarket({ workspace }: { workspace: Workspace }) {
     const digest = hid(seed + "d");
     const pass: NftPass = { id: nftId, tier: mintTier, to: recipient, txDigest: digest, ts: now() };
     setPasses([pass, ...passes.slice(0, 9)]);
+    recordFundingSpend(SUI_FUNDING_SCOPE, MINT_COST, { mode: "treasury", serviceId: "svc_sui_nft_mint", settlement: "fallback" });
     emitReceipt({
       workspaceId: workspace.id,
       serviceId: "svc_sui_nft_mint",
@@ -321,7 +376,9 @@ export function SuiNftMarket({ workspace }: { workspace: Workspace }) {
       network: "sui-mainnet",
       status: "verified",
       kind: "sui.nft.mint",
-      payload: { nftId, tier: mintTier, collection: "AgentPass", to: recipient },
+      payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, MINT_COST, {
+        mode: "treasury", serviceId: "svc_sui_nft_mint", settlement: "fallback",
+      }, { nftId, tier: mintTier, collection: "AgentPass", to: recipient }),
     });
     setLog(`Minted ${nftId.slice(0, 12)}…`);
     setBusy(false);
@@ -366,6 +423,7 @@ export function SuiNftMarket({ workspace }: { workspace: Workspace }) {
         {busy ? <Loader2 size={13} className="wallet-spin" /> : <Sparkles size={13} />}
         {busy ? log : `Mint ${selected.label} (${selected.price} SUI)`}
       </button>
+      {fundingErr && <FundingBlockedNote msg={fundingErr} />}
       {passes.length > 0 && (
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 6 }}>Minted passes ({passes.length})</div>
@@ -436,6 +494,9 @@ export function ZkLoginPanel({ workspace }: { workspace: Workspace }) {
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState("");
   const [liveEpoch, setLiveEpoch] = useState<number | null>(null);
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
+
+  const ZKPROOF_COST = 0.01;
 
   useEffect(() => {
     fetchSuiEpoch().then(e => { if (e !== null) setLiveEpoch(e); }).catch(() => {});
@@ -447,6 +508,12 @@ export function ZkLoginPanel({ workspace }: { workspace: Workspace }) {
       : `/auth?response_type=code&client_id=YOUR_CLIENT_ID&scope=openid&nonce=<zklogin-nonce>`);
 
   async function generate() {
+    const fc = checkFunding(SUI_FUNDING_SCOPE, ZKPROOF_COST, { mode: "treasury", serviceId: "svc_sui_zkproof" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setBusy(true);
     setLog("Fetching live Sui epoch…");
     const epoch = await fetchSuiEpoch() ?? liveEpoch ?? 420;
@@ -458,6 +525,7 @@ export function ZkLoginPanel({ workspace }: { workspace: Workspace }) {
     const proof = addrHex.slice(0, 32); // simulated proof digest
     const zk: ZkProof = { provider, address, maxEpoch, proof, ts: now(), real: epoch !== null };
     setProofs([zk, ...proofs.slice(0, 9)]);
+    recordFundingSpend(SUI_FUNDING_SCOPE, ZKPROOF_COST, { mode: "treasury", serviceId: "svc_sui_zkproof", settlement: "fallback" });
     emitReceipt({
       workspaceId: workspace.id,
       serviceId: "svc_sui_zkproof",
@@ -470,7 +538,9 @@ export function ZkLoginPanel({ workspace }: { workspace: Workspace }) {
       network: "sui-mainnet",
       status: "verified",
       kind: "sui.zklogin",
-      payload: { provider, address, maxEpoch, proof, liveEpoch: epoch },
+      payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, ZKPROOF_COST, {
+        mode: "treasury", serviceId: "svc_sui_zkproof", settlement: "fallback",
+      }, { provider, address, maxEpoch, proof, liveEpoch: epoch }),
     });
     setLog(`zkLogin address: ${address.slice(0, 12)}… · epoch ${maxEpoch}`);
     setBusy(false);
@@ -512,6 +582,7 @@ export function ZkLoginPanel({ workspace }: { workspace: Workspace }) {
         {busy ? <Loader2 size={13} className="wallet-spin" /> : <Shield size={13} />}
         {busy ? log : `Generate zkLogin proof (${provider})`}
       </button>
+      {fundingErr && <FundingBlockedNote msg={fundingErr} />}
       {proofs.length > 0 && (
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 6 }}>Generated proofs ({proofs.length})</div>
@@ -549,9 +620,17 @@ export function SuiAgentWalletPanel({ workspace }: { workspace: Workspace }) {
   const [amount, setAmount] = useState(0.1);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState("");
+  const [treasuryEpoch, setTreasuryEpoch] = useState(0);
+
+  const TRANSFER_COST = 0.005;
 
   async function send() {
     if (amount > balance) { setLog("Insufficient balance"); return; }
+    const fc = checkFunding(SUI_FUNDING_SCOPE, TRANSFER_COST, { mode: "treasury", serviceId: "svc_sui_agent_id" });
+    if (!fc.ok) {
+      setLog(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
     setBusy(true);
     setLog("Signing transaction…");
     await new Promise((r) => setTimeout(r, 500));
@@ -562,6 +641,8 @@ export function SuiAgentWalletPanel({ workspace }: { workspace: Workspace }) {
     const tx: SuiTx = { type: "transfer", amount, to, hash, ts: now() };
     setTxs([tx, ...txs.slice(0, 9)]);
     setBalance(+(balance - amount - 0.001).toFixed(4));
+    recordFundingSpend(SUI_FUNDING_SCOPE, TRANSFER_COST, { mode: "treasury", serviceId: "svc_sui_agent_id", settlement: "fallback" });
+    setTreasuryEpoch((e) => e + 1);
     emitReceipt({
       workspaceId: workspace.id,
       serviceId: "svc_sui_agent_id",
@@ -574,7 +655,9 @@ export function SuiAgentWalletPanel({ workspace }: { workspace: Workspace }) {
       network: "sui-mainnet",
       status: "verified",
       kind: "sui.transfer",
-      payload: { to, amount, hash },
+      payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, TRANSFER_COST, {
+        mode: "treasury", serviceId: "svc_sui_agent_id", settlement: "fallback",
+      }, { to, amount, hash }),
     });
     setLog(`Sent ${fmtSui(amount)} → ${to}`);
     setBusy(false);
@@ -613,7 +696,15 @@ export function SuiAgentWalletPanel({ workspace }: { workspace: Workspace }) {
         {busy ? <Loader2 size={13} className="wallet-spin" /> : <ArrowRightLeft size={13} />}
         {busy ? log : `Send ${fmtSui(amount)}`}
       </button>
-      {log && !busy && <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 6 }}>{log}</div>}
+      {log && !busy && <div style={{ fontSize: 11, color: log.startsWith("Blocked:") ? "#fbbf24" : "var(--text-secondary)", marginTop: 6 }}>{log}</div>}
+      <div style={{ marginTop: 14 }}>
+        <TreasuryPanel
+          key={treasuryEpoch}
+          scope={SUI_FUNDING_SCOPE}
+          label="Sui autonomous service calls"
+          defaultTopUpUsd={SUI_TREASURY_TOPUP_USD}
+        />
+      </div>
       {txs.length > 0 && (
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 6 }}>Recent transactions ({txs.length})</div>
@@ -659,8 +750,19 @@ export function SuiAgentEconomyLoop({ workspace }: { workspace: Workspace }) {
   const [steps, setSteps] = useLocalStore<EconStep[]>("sui.econ.steps", []);
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState(0);
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
+
+  // Each phase costs a small USD amount within the per-call cap.
+  const PHASE_COST = 0.01;
 
   async function runLoop() {
+    // Preflight the first phase — the loop spends PHASE_COST per phase from the treasury.
+    const fc = checkFunding(SUI_FUNDING_SCOPE, PHASE_COST, { mode: "treasury", serviceId: PHASES[0].svcId });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setRunning(true);
     for (let i = 0; i < PHASES.length; i++) {
       setPhase(i);
@@ -670,6 +772,7 @@ export function SuiAgentEconomyLoop({ workspace }: { workspace: Workspace }) {
       const hash = hid(seed);
       const step: EconStep = { step: p.label + ": " + p.desc, amount: p.amount, currency: "SUI", hash, ts: now() };
       setSteps((prev) => [step, ...prev].slice(0, 20));
+      recordFundingSpend(SUI_FUNDING_SCOPE, PHASE_COST, { mode: "treasury", serviceId: p.svcId, settlement: "fallback" });
       emitReceipt({
         workspaceId: workspace.id,
         serviceId: p.svcId,
@@ -682,7 +785,9 @@ export function SuiAgentEconomyLoop({ workspace }: { workspace: Workspace }) {
         network: "sui-mainnet",
         status: "verified",
         kind: "sui.econ",
-        payload: { step: p.label, phase: i },
+        payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, PHASE_COST, {
+          mode: "treasury", serviceId: p.svcId, settlement: "fallback",
+        }, { step: p.label, phase: i }),
       });
     }
     setPhase(0);
@@ -701,7 +806,8 @@ export function SuiAgentEconomyLoop({ workspace }: { workspace: Workspace }) {
           {running ? `Phase ${phase + 1}/${PHASES.length}: ${PHASES[phase].label}` : "Run economy loop"}
         </button>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 14 }}>
+      {fundingErr && <FundingBlockedNote msg={fundingErr} />}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 14, marginTop: 14 }}>
         {PHASES.map((p, i) => (
           <div key={p.label} style={{
             padding: "10px 12px", borderRadius: 8,
@@ -772,6 +878,9 @@ export function DeepBookYieldEscrow({ workspace }: { workspace: Workspace }) {
   const [amount, setAmount] = useState("1.0");
   const [locking, setLocking] = useState(false);
   const [prices, setPrices] = useState<Record<string, number>>({});
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
+
+  const ESCROW_COST = 0.025;
 
   useEffect(() => {
     let cancelled = false;
@@ -780,13 +889,20 @@ export function DeepBookYieldEscrow({ workspace }: { workspace: Workspace }) {
   }, []);
 
   async function lockFunds() {
+    const fc = checkFunding(SUI_FUNDING_SCOPE, ESCROW_COST, { mode: "treasury", serviceId: "svc_sui_yield_escrow" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setLocking(true);
     const epoch = await getSuiEpoch();
     const sel = POOLS.find(p => p.id === pool)!;
     const id = hid(`escrow-${Date.now()}`);
     const newEscrow = { id, pool: sel.id, amount: parseFloat(amount), yield: 0, status: "active", ts: new Date().toLocaleTimeString(), epoch: epoch ?? undefined };
     setEscrows(prev => [newEscrow, ...prev]);
-    emitReceipt({ workspaceId: workspace.id, serviceName: "DeepBook Yield Escrow", amount: parseFloat(amount), currency: "SUI", network: "sui-mainnet", kind: "sui.yield.lock", payload: { escrowId: id, pool: sel.id, epoch } });
+    recordFundingSpend(SUI_FUNDING_SCOPE, ESCROW_COST, { mode: "treasury", serviceId: "svc_sui_yield_escrow", settlement: "fallback" });
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_sui_yield_escrow", serviceName: "DeepBook Yield Escrow", amount: parseFloat(amount), currency: "SUI", network: "sui-mainnet", kind: "sui.yield.lock", payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, ESCROW_COST, { mode: "treasury", serviceId: "svc_sui_yield_escrow", settlement: "fallback" }, { escrowId: id, pool: sel.id, epoch }) });
     setLocking(false);
   }
 
@@ -820,6 +936,7 @@ export function DeepBookYieldEscrow({ workspace }: { workspace: Workspace }) {
           {locking ? "Checking epoch…" : "Lock + Earn"}
         </button>
       </div>
+      {fundingErr && <FundingBlockedNote msg={fundingErr} />}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 14 }}>
         {POOLS.map(p => {
           const livePrice = prices[p.priceKey] ?? 0;
@@ -1007,6 +1124,9 @@ export function SuiPayButtonWidget({ workspace }: { workspace: Workspace }) {
   const [copied, setCopied] = useState(false);
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
+
+  const PAY_COST = 0.001;
 
   const snippet = `<script src="https://cdn.suiagent.os/pay.js"></script>
 <sui-pay
@@ -1023,10 +1143,17 @@ export function SuiPayButtonWidget({ workspace }: { workspace: Workspace }) {
   }
 
   async function simulatePay() {
+    const fc = checkFunding(SUI_FUNDING_SCOPE, PAY_COST, { mode: "treasury", serviceId: "svc_sui_pay_widget" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setPaying(true);
     await new Promise(r => setTimeout(r, 1600));
     const hash = hid(`pay-${Date.now()}`);
-    emitReceipt({ workspaceId: workspace.id, serviceName: "Sui Pay Button", amount: parseFloat(amount), currency: "SUI", network: "sui-mainnet", status: "paid", kind: "sui.pay.widget", payload: { hash } });
+    recordFundingSpend(SUI_FUNDING_SCOPE, PAY_COST, { mode: "treasury", serviceId: "svc_sui_pay_widget", settlement: "fallback" });
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_sui_pay_widget", serviceName: "Sui Pay Button", amount: parseFloat(amount), currency: "SUI", network: "sui-mainnet", status: "paid", kind: "sui.pay.widget", payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, PAY_COST, { mode: "treasury", serviceId: "svc_sui_pay_widget", settlement: "fallback" }, { hash }) });
     setPaying(false);
     setPaid(true);
     setTimeout(() => setPaid(false), 3000);
@@ -1055,6 +1182,7 @@ export function SuiPayButtonWidget({ workspace }: { workspace: Workspace }) {
           {paying ? <><Loader2 size={13} className="wallet-spin" /> Processing…</> : paid ? <><BadgeCheck size={13} /> Paid!</> : <><Zap size={13} /> {label}</>}
         </button>
       </div>
+      {fundingErr && <FundingBlockedNote msg={fundingErr} />}
     </div>
   );
 }
@@ -1071,22 +1199,40 @@ export function AgentMemoryNetwork({ workspace }: { workspace: Workspace }) {
   const [price, setPrice] = useState("0.005");
   const [writing, setWriting] = useState(false);
   const [buying, setBuying] = useState<string | null>(null);
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
+
+  const MEMORY_COST = 0.018;
 
   async function writeMemory() {
     if (!key.trim() || !value.trim()) return;
+    const fc = checkFunding(SUI_FUNDING_SCOPE, MEMORY_COST, { mode: "treasury", serviceId: "svc_sui_memory_write" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setWriting(true);
     await new Promise(r => setTimeout(r, 1500));
     const id = hid(`mem-${key}-${Date.now()}`);
     setMemories(prev => [{ id, key: key.trim(), preview: value.slice(0, 60) + (value.length > 60 ? "…" : ""), shared, price: parseFloat(price), ts: new Date().toLocaleTimeString() }, ...prev]);
-    emitReceipt({ workspaceId: workspace.id, serviceName: "Agent Memory Write", amount: 0.018, currency: "SUI", network: "sui-mainnet", kind: "sui.memory.write", payload: { memoryId: id, memKey: key.trim(), shared } });
+    recordFundingSpend(SUI_FUNDING_SCOPE, MEMORY_COST, { mode: "treasury", serviceId: "svc_sui_memory_write", settlement: "fallback" });
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_sui_memory_write", serviceName: "Agent Memory Write", amount: 0.018, currency: "SUI", network: "sui-mainnet", kind: "sui.memory.write", payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, MEMORY_COST, { mode: "treasury", serviceId: "svc_sui_memory_write", settlement: "fallback" }, { memoryId: id, memKey: key.trim(), shared }) });
     setKey(""); setValue("");
     setWriting(false);
   }
 
   async function buyAccess(id: string, p: number) {
+    const ACCESS_COST = 0.005;
+    const fc = checkFunding(SUI_FUNDING_SCOPE, ACCESS_COST, { mode: "treasury", serviceId: "svc_sui_memory_write" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setBuying(id);
     await new Promise(r => setTimeout(r, 1200));
-    emitReceipt({ workspaceId: workspace.id, serviceName: "Agent Memory Access", amount: p, currency: "SUI", network: "sui-mainnet", status: "paid", kind: "sui.memory.access", payload: { memoryId: id } });
+    recordFundingSpend(SUI_FUNDING_SCOPE, ACCESS_COST, { mode: "treasury", serviceId: "svc_sui_memory_write", settlement: "fallback" });
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_sui_memory_write", serviceName: "Agent Memory Access", amount: p, currency: "SUI", network: "sui-mainnet", status: "paid", kind: "sui.memory.access", payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, ACCESS_COST, { mode: "treasury", serviceId: "svc_sui_memory_write", settlement: "fallback" }, { memoryId: id }) });
     setBuying(null);
   }
 
@@ -1112,6 +1258,7 @@ export function AgentMemoryNetwork({ workspace }: { workspace: Workspace }) {
           {writing ? "Writing…" : "Write Memory"}
         </button>
       </div>
+      {fundingErr && <FundingBlockedNote msg={fundingErr} />}
       {memories.length > 0 && (
         <div className="svc-table__scroll">
           <table className="svc-table">
@@ -1150,18 +1297,36 @@ export function BattleArenaWidget({ workspace }: { workspace: Workspace }) {
   const [challengeName, setChallengeName] = useState("");
   const [challengePrize, setChallengePrize] = useState("1.0");
   const [creating, setCreating] = useState(false);
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
+
+  const BET_COST = 0.01;
+  const CREATE_COST = 0.05;
 
   async function placeBet(challengeId: string, side: "a" | "b") {
+    const fc = checkFunding(SUI_FUNDING_SCOPE, BET_COST, { mode: "treasury", serviceId: "svc_sui_battle" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     const hash = hid(`bet-${challengeId}-${side}-${Date.now()}`);
     setBets(prev => ({ ...prev, [challengeId]: { side, amount: parseFloat(betAmount) } }));
-    emitReceipt({ workspaceId: workspace.id, serviceName: "Battle Arena Bet", amount: parseFloat(betAmount), currency: "SUI", network: "sui-mainnet", status: "paid", kind: "sui.arena.bet", payload: { challengeId, side, hash } });
+    recordFundingSpend(SUI_FUNDING_SCOPE, BET_COST, { mode: "treasury", serviceId: "svc_sui_battle", settlement: "fallback" });
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_sui_battle", serviceName: "Battle Arena Bet", amount: parseFloat(betAmount), currency: "SUI", network: "sui-mainnet", status: "paid", kind: "sui.arena.bet", payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, BET_COST, { mode: "treasury", serviceId: "svc_sui_battle", settlement: "fallback" }, { challengeId, side, hash }) });
   }
 
   async function createChallenge() {
     if (!challengeName.trim()) return;
+    const fc = checkFunding(SUI_FUNDING_SCOPE, CREATE_COST, { mode: "treasury", serviceId: "svc_sui_battle" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setCreating(true);
     await new Promise(r => setTimeout(r, 1400));
-    emitReceipt({ workspaceId: workspace.id, serviceName: "Battle Arena Challenge", amount: parseFloat(challengePrize), currency: "SUI", network: "sui-mainnet", status: "paid", kind: "sui.arena.create", payload: { challengeName, prizePool: hid(`challenge-${Date.now()}`) } });
+    recordFundingSpend(SUI_FUNDING_SCOPE, CREATE_COST, { mode: "treasury", serviceId: "svc_sui_battle", settlement: "fallback" });
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_sui_battle", serviceName: "Battle Arena Challenge", amount: parseFloat(challengePrize), currency: "SUI", network: "sui-mainnet", status: "paid", kind: "sui.arena.create", payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, CREATE_COST, { mode: "treasury", serviceId: "svc_sui_battle", settlement: "fallback" }, { challengeName, prizePool: hid(`challenge-${Date.now()}`) }) });
     setCreating(false);
     setChallengeName("");
   }
@@ -1176,6 +1341,7 @@ export function BattleArenaWidget({ workspace }: { workspace: Workspace }) {
           <button className={`btn btn-sm ${tab === "compete" ? "btn-acc" : ""}`} onClick={() => setTab("compete")}>Compete</button>
         </div>
       </div>
+      {fundingErr && <FundingBlockedNote msg={fundingErr} />}
       {tab === "spectate" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
           {ARENA_CHALLENGES.map(c => {
@@ -1282,6 +1448,10 @@ export function IntentEngineWidget({ workspace }: { workspace: Workspace }) {
   const [builtHash, setBuiltHash] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
+  const [fundingErr, setFundingErr] = useState<string | null>(null);
+
+  const DEPLOY_COST = 0.04;
+  const PTB_BUILD_COST = 0.015;
 
   function handleParse() {
     if (!intent.trim()) return;
@@ -1290,10 +1460,17 @@ export function IntentEngineWidget({ workspace }: { workspace: Workspace }) {
   }
 
   async function deployWorkflow() {
+    const fc = checkFunding(SUI_FUNDING_SCOPE, DEPLOY_COST, { mode: "treasury", serviceId: "svc_sui_intent" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setDeploying(true);
     await new Promise(r => setTimeout(r, 2000));
     const hash = hid(`workflow-${Date.now()}`);
-    emitReceipt({ workspaceId: workspace.id, serviceName: "Intent Engine Deploy", amount: 0.04, currency: "SUI", network: "sui-mainnet", status: "verified", kind: "sui.intent.deploy", payload: { hash } });
+    recordFundingSpend(SUI_FUNDING_SCOPE, DEPLOY_COST, { mode: "treasury", serviceId: "svc_sui_intent", settlement: "fallback" });
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_sui_intent", serviceName: "Intent Engine Deploy", amount: 0.04, currency: "SUI", network: "sui-mainnet", status: "verified", kind: "sui.intent.deploy", payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, DEPLOY_COST, { mode: "treasury", serviceId: "svc_sui_intent", settlement: "fallback" }, { hash }) });
     setDeploying(false);
     setDeployed(true);
   }
@@ -1332,12 +1509,19 @@ export function IntentEngineWidget({ workspace }: { workspace: Workspace }) {
 
   async function buildPtb() {
     if (ptbSteps.length === 0) return;
+    const fc = checkFunding(SUI_FUNDING_SCOPE, PTB_BUILD_COST, { mode: "treasury", serviceId: "svc_sui_move_exec" });
+    if (!fc.ok) {
+      setFundingErr(`Blocked: ${fc.reason}. Fund the Sui Agent Treasury first.`);
+      return;
+    }
+    setFundingErr(null);
     setBuilding(true);
     await new Promise(r => setTimeout(r, 1200));
     const hash = hid(`ptb-${ptbSteps.map(s => s.cmd).join("-")}-${Date.now()}`);
     setBuiltHash(hash);
     const totalGas = ptbSteps.reduce((s, st) => s + st.gasEst, 0);
-    emitReceipt({ workspaceId: workspace.id, serviceName: "PTB Builder · Execute", amount: totalGas / 1_000_000, currency: "SUI", network: "sui-mainnet", status: "verified", kind: "sui.ptb.execute", payload: { steps: ptbSteps.map(s => s.cmd), hash, totalGas } });
+    recordFundingSpend(SUI_FUNDING_SCOPE, PTB_BUILD_COST, { mode: "treasury", serviceId: "svc_sui_move_exec", settlement: "fallback" });
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_sui_move_exec", serviceName: "PTB Builder · Execute", amount: totalGas / 1_000_000, currency: "SUI", network: "sui-mainnet", status: "verified", kind: "sui.ptb.execute", payload: fundingReceiptPayload(SUI_FUNDING_SCOPE, PTB_BUILD_COST, { mode: "treasury", serviceId: "svc_sui_move_exec", settlement: "fallback" }, { steps: ptbSteps.map(s => s.cmd), hash, totalGas }) });
     setBuilding(false);
   }
 
@@ -1353,6 +1537,7 @@ export function IntentEngineWidget({ workspace }: { workspace: Workspace }) {
           <button className={`btn btn-sm ${mode === "builder" ? "btn-acc" : ""}`} onClick={() => setMode("builder")}>PTB Builder</button>
         </div>
       </div>
+      {fundingErr && <FundingBlockedNote msg={fundingErr} />}
 
       {mode === "nl" && (
         <>

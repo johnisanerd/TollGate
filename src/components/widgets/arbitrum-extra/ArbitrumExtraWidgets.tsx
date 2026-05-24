@@ -7,6 +7,7 @@ import { useAppState } from "../../../app-state";
 import { useLocalStore } from "../../../lib/storage";
 import { hashId } from "../../../lib/util-hash";
 import { useWallet, sendErc20Transfer, parseUnits } from "../../../wallet";
+import { fundingReceiptPayload, ARB_FUNDING_SCOPE } from "../../../workspaces/arbitrum/funding";
 
 const hid = (s: string) => hashId("arb", s);
 const now = () => new Date().toLocaleTimeString();
@@ -102,19 +103,23 @@ export function BatchPayoutConsole({ workspace }: { workspace: Workspace }) {
       },
       ...prev.slice(0, 9),
     ]);
+    // Manual user batch payout — wallet-signed ERC-20/ETH transfers, never the Agent Treasury.
     emitReceipt({
       workspaceId: workspace.id,
       serviceId: "svc_arb_usdc",
       serviceName: `Batch Payout · ${validRows.length} recipients · ${token}`,
-      agentName: "Arbitrum Payout Agent",
       payerWallet: account,
-      providerWallet: "0xArbGW…cc3",
-      amount: total,
+      amount: real ? Math.round(total * 100) / 100 : 0,
       currency: token,
       network: "arbitrum-sepolia",
-      status: "verified",
+      status: real ? "verified" : "pending",
       kind: "arb.batch.payout",
-      payload: { count: validRows.length, total, token, txHashes, real },
+      payload: fundingReceiptPayload(
+        ARB_FUNDING_SCOPE,
+        total,
+        { mode: "wallet_per_call", serviceId: "svc_arb_usdc", settlement: real ? "live" : "fallback" },
+        { count: validRows.length, total, token, txHashes, real },
+      ),
     });
     setBusy(false);
   }
@@ -477,19 +482,22 @@ export function RobinhoodChainPanel({ workspace }: { workspace: Workspace }) {
       { id: hid(seed + "id"), contract, address: addr, chain: chain.label, explorer: chain.explorer, ts: now() },
       ...prev.slice(0, 9),
     ]);
+    // Simulated deploy — local preview, no on-chain settlement. Fallback receipt (amount 0), no treasury spend.
     emitReceipt({
       workspaceId: workspace.id,
       serviceId: "svc_arb_agent_registry",
-      serviceName: `Deploy ${contract} → ${chain.label}`,
-      agentName: "Arbitrum Deploy Agent",
-      payerWallet: "0xArbAg…aa1",
-      providerWallet: "0xArbGW…cc3",
-      amount: 0.003,
+      serviceName: `Deploy ${contract} → ${chain.label} (simulated)`,
+      amount: 0,
       currency: "ETH",
       network: chain.id,
-      status: "verified",
+      status: "pending",
       kind: "arb.deploy",
-      payload: { contract, chain: chain.id, address: addr },
+      payload: fundingReceiptPayload(
+        ARB_FUNDING_SCOPE,
+        0.003,
+        { mode: "wallet_per_call", serviceId: "svc_arb_agent_registry", settlement: "fallback" },
+        { contract, chain: chain.id, address: addr },
+      ),
     });
     setLog(`Deployed @ ${addr.slice(0, 12)}…`);
     setBusy(false);

@@ -88,6 +88,7 @@ export function WorkspaceWalletGate({
       : step === "switching"
         ? `Switching to ${target.name}...`
         : `Switch to ${target.name}`;
+  const isAgora = workspace.id === "agora";
 
   return (
     <div className="workspace-wallet-gate" role="dialog" aria-modal="true" aria-label={`Connect wallet for ${workspace.shortName}`}>
@@ -97,10 +98,11 @@ export function WorkspaceWalletGate({
         </div>
         <div>
           <div className="workspace-wallet-gate__eyebrow">Workspace access check</div>
-          <h1>{workspace.shortName} requires wallet context</h1>
+          <h1>{isAgora ? "Start ArcMind CopyGuard with your wallet" : `${workspace.shortName} requires wallet context`}</h1>
           <p>
-            Before opening this workspace, connect a wallet and use the chain configured for this project.
-            Wallet popups require your approval; the app cannot switch networks silently.
+            {isAgora
+              ? "Connect an Arc Testnet wallet before starting a copy session. Your USDC stake stays user-controlled; the agent can only spend its separate treasury for autonomous data/action costs."
+              : "Before opening this workspace, connect a wallet and use the chain configured for this project. Wallet popups require your approval; the app cannot switch networks silently."}
           </p>
         </div>
 

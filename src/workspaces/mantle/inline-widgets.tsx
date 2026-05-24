@@ -9,6 +9,7 @@ import type { Workspace } from "../../types";
 import { Bolt, Check, Plus, Robot } from "../../icons402";
 import { fetchMantleGasPrice } from "../../lib/mantle";
 import { fetchPrices } from "../../lib/prices";
+import { checkFunding, fundingReceiptPayload, requestWalletPerCallSignature, MNT_FUNDING_SCOPE } from "./funding";
 
 // ---------------------------------------------------------------------------
 // MANTLE — Earn Calculator (mETH / USDY tab)
@@ -106,18 +107,22 @@ export function MantleAgentEconomyDashboard({ workspace }: { workspace: Workspac
   const [fundAmt, setFundAmt] = useState("5");
   const agentSparkline = (id: string) => Array.from({ length: 7 }, (_, i) => deterministicScore(id + i, 2, 22));
 
-  const deployAgent = () => {
+  const deployAgent = async () => {
     const erc8004Id = "0x8004" + hashId("8004", newName + Date.now(), 4);
     const walletAddr = "0x" + hashId("wa", newName + erc8004Id, 12);
     const cap = parseFloat(newCap) || 5;
+    // Manual agent deployment — needs a per-call wallet signature, never the Agent Treasury.
+    try { await requestWalletPerCallSignature(MNT_FUNDING_SCOPE, 0.05, "agent-deploy"); } catch { return; }
     const ag: EconomyAgent = { id: "ea_" + hashId("ea", newName + Date.now(), 4), name: newName.trim() || "Unnamed", erc8004Id, balance: 0, spentToday: 0, cap, status: "active" };
     setAgents((p) => [ag, ...p].slice(0, 10));
-    emitReceipt({ workspaceId: workspace.id, serviceName: "Mantle Agent · Deploy ERC-8004", amount: 0.05, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.agent.deploy", payload: { erc8004Id, wallet: walletAddr, cap } });
+    emitReceipt({ workspaceId: workspace.id, serviceName: "Mantle Agent · Deploy ERC-8004", amount: 0.05, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.agent.deploy", payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, 0.05, { mode: "wallet_per_call", serviceId: "agent-deploy", settlement: "live" }, { erc8004Id, wallet: walletAddr, cap }) });
   };
-  const fundAgent = (id: string) => {
+  const fundAgent = async (id: string) => {
     const a = parseFloat(fundAmt) || 0; if (a <= 0) return;
+    // Manual agent funding (capital movement) — needs a per-call wallet signature, never the Agent Treasury.
+    try { await requestWalletPerCallSignature(MNT_FUNDING_SCOPE, a, "agent-fund"); } catch { return; }
     setAgents((p) => p.map((ag) => ag.id === id ? { ...ag, balance: +(ag.balance + a).toFixed(2) } : ag));
-    emitReceipt({ workspaceId: workspace.id, serviceName: "Mantle Agent · Fund", amount: a, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.agent.fund", payload: { agentId: id, amount: a } });
+    emitReceipt({ workspaceId: workspace.id, serviceName: "Mantle Agent · Fund", amount: a, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.agent.fund", payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, a, { mode: "wallet_per_call", serviceId: "agent-fund", settlement: "live" }, { agentId: id, amount: a }) });
     setFundId(null);
   };
   const toggleStatus = (id: string) => setAgents((p) => p.map((ag) => ag.id === id ? { ...ag, status: ag.status === "active" ? "paused" : "active" } : ag));
@@ -213,9 +218,18 @@ export function MantlePortfolioRebalancer({ workspace }: { workspace: Workspace 
   const swapAmt = +(Math.abs(currentMeth - targetMeth) * 10).toFixed(2);
   const [autoRebalance, setAutoRebalance] = useState(false);
   const [done, setDone] = useState(false);
+  const [rebErr, setRebErr] = useState<string | null>(null);
 
-  const rebalance = () => {
-    emitReceipt({ workspaceId: workspace.id, serviceName: `Mantle Rebalancer · ${swapDir}`, amount: swapAmt, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.rebalance", payload: { from: currentMeth, to: targetMeth, swapAmt, swapDir } });
+  const rebalance = async () => {
+    // Manual portfolio rebalance — needs a per-call wallet signature, never the Agent Treasury.
+    try {
+      await requestWalletPerCallSignature(MNT_FUNDING_SCOPE, swapAmt, "svc_mnt_meth");
+    } catch {
+      setRebErr("Wallet signature required — rebalance not executed. This is a manual wallet action; it never spends the Agent Treasury.");
+      return;
+    }
+    setRebErr(null);
+    emitReceipt({ workspaceId: workspace.id, serviceName: `Mantle Rebalancer · ${swapDir}`, amount: swapAmt, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.rebalance", payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, swapAmt, { mode: "wallet_per_call", serviceId: "svc_mnt_meth", settlement: "live" }, { from: currentMeth, to: targetMeth, swapAmt, swapDir }) });
     setCurrentMeth(targetMeth);
     setDone(true); setTimeout(() => setDone(false), 2000);
   };
@@ -267,6 +281,7 @@ export function MantlePortfolioRebalancer({ workspace }: { workspace: Workspace 
             <button type="button" className="btn btn-acc" style={{ padding: "9px 18px", fontWeight: 800 }} onClick={rebalance} disabled={done}>{done ? <><Check width={14} height={14} /> Done!</> : "Rebalance now"}</button>
           </div>
         </div>
+        {rebErr && <div style={{ marginBottom: 12, padding: "7px 12px", borderRadius: 9, background: "color-mix(in srgb, var(--red) 12%, transparent)", color: "var(--red)", fontSize: ".74rem", fontWeight: 600 }}>{rebErr}</div>}
         {/* auto-rebalance toggle */}
         <label className="row sm" style={{ gap: 8, cursor: "pointer", fontSize: ".82rem" }}>
           <input type="checkbox" checked={autoRebalance} onChange={(e) => setAutoRebalance(e.currentTarget.checked)} />
@@ -392,10 +407,18 @@ export function AlphaDesk({ workspace }: { workspace: Workspace }) {
   const [pulls, setPulls] = useState(0);
   const [subbed, setSubbed] = useLocalStore<boolean>("mantle.alpha.sub", false);
   const [livePrice, setLivePrice] = useState<{ mnt: number; change: number } | null>(null);
+  const [pullErr, setPullErr] = useState<string | null>(null);
   const recent = useMemo(() => receipts.filter((r) => r.workspaceId === workspace.id && r.kind === "mantle.alpha.pull").slice(0, 6), [receipts, workspace.id]);
   const dot = (c: number) => c > 80 ? "#1fb58a" : c > 70 ? "#ff9b00" : "var(--muted)";
 
   const pull = async () => {
+    // Autonomous agent data call — gated by the Mantle Agent Treasury.
+    const preflight = checkFunding(MNT_FUNDING_SCOPE, 0.04, { mode: "treasury", serviceId: "svc_mnt_meth" });
+    if (!preflight.ok) {
+      setPullErr(`Autonomous alpha pull blocked — ${preflight.reason}. Sign a treasury allowance in the Agent Treasury panel above.`);
+      return;
+    }
+    setPullErr(null);
     const n = pulls + 1;
     // fetch real MNT price to anchor alpha drops in real data
     let freshPrice = livePrice;
@@ -409,7 +432,8 @@ export function AlphaDesk({ workspace }: { workspace: Workspace }) {
     const fresh = [makeAlphaDrop(`${workspace.id}|p${n}|0`), makeAlphaDrop(`${workspace.id}|p${n}|1`)];
     setFeed((f) => [...fresh, ...f].slice(0, 12));
     setPulls(n);
-    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_mnt_alpha", serviceName: "Mantle Alpha Desk · Pull", amount: 0.04, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.alpha.pull", payload: { drops: fresh.map((d) => ({ conf: d.conf, text: d.text })), pull: n, mntPrice: freshPrice?.mnt } });
+    // Alpha drops are generated locally — fallback receipt (amount 0), no live settlement, no treasury deduction.
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_mnt_meth", serviceName: "Mantle Alpha Desk · Pull (local)", amount: 0, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.alpha.pull", status: "pending", payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, 0.04, { mode: "treasury", serviceId: "svc_mnt_meth", settlement: "fallback" }, { drops: fresh.map((d) => ({ conf: d.conf, text: d.text })), pull: n, mntPrice: freshPrice?.mnt }) });
   };
   const toggleSub = () => {
     const next = !subbed; setSubbed(next);
@@ -438,6 +462,10 @@ export function AlphaDesk({ workspace }: { workspace: Workspace }) {
           <button className="btn btn-acc btn-sm" style={{ fontFamily: "monospace", fontSize: ".7rem" }} type="button" onClick={pull}>[PULL $0.04]</button>
         </span>
       </div>
+
+      {pullErr && (
+        <div style={{ margin: "10px 16px 0", padding: "7px 12px", borderRadius: 9, background: "color-mix(in srgb, var(--red) 12%, transparent)", color: "var(--red)", fontSize: ".72rem", fontWeight: 600 }}>{pullErr}</div>
+      )}
 
       {/* Terminal body */}
       <div style={{ background: "color-mix(in srgb, var(--bg-3, #0d1117) 60%, transparent)", padding: "8px 0", maxHeight: 360, overflowY: "auto" }}>
@@ -504,6 +532,7 @@ export function RwaRegistry({ workspace }: { workspace: Workspace }) {
   }, []);
   const [selId, setSelId] = useState<string>(RWA_BASKETS[0].id);
   const [running, setRunning] = useState(false);
+  const [reportErr, setReportErr] = useState<string | null>(null);
   const [report, setReport] = useState<{ basketId: string; collateralRatio: number; defaultProb: number; stress: string; recommendation: string; reportId: string } | null>(null);
   const sel = baskets.find((b) => b.id === selId) ?? baskets[0]!;
   const portfolioApy = (baskets.reduce((s, b) => s + b.apy * b.weight, 0) / 100);
@@ -522,6 +551,13 @@ export function RwaRegistry({ workspace }: { workspace: Workspace }) {
   });
 
   const runReport = async () => {
+    // Autonomous agent data call — gated by the Mantle Agent Treasury.
+    const preflight = checkFunding(MNT_FUNDING_SCOPE, 0.06, { mode: "treasury", serviceId: "svc_mnt_stress" });
+    if (!preflight.ok) {
+      setReportErr(`Autonomous RWA risk report blocked — ${preflight.reason}. Sign a treasury allowance first.`);
+      return;
+    }
+    setReportErr(null);
     setRunning(true);
     await new Promise((r) => setTimeout(r, 520));
     const b = sel;
@@ -530,7 +566,8 @@ export function RwaRegistry({ workspace }: { workspace: Workspace }) {
     const stress = collateralRatio < 108 || defaultProb > 1.5 ? "fails -20% rate shock" : collateralRatio < 118 ? "marginal under -20% rate shock" : "passes -20% rate shock";
     const recommendation = defaultProb < 0.6 && collateralRatio > 115 ? "size up to target weight" : defaultProb < 1.2 ? "hold at current weight" : "trim — grade may slip";
     const reportId = "rwar_" + hashId("rwar", b.id + Date.now(), 8);
-    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_mnt_stress", serviceName: `RWA Risk Report · ${b.name}`, amount: 0.06, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.rwa.report", payload: { basket: b.name, basketId: b.id, grade: b.grade, collateralRatio, defaultProb, stress, recommendation, reportId } });
+    // Risk report computed locally — fallback receipt (amount 0), no live settlement, no treasury deduction.
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_mnt_stress", serviceName: `RWA Risk Report · ${b.name} (local)`, amount: 0, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.rwa.report", status: "pending", payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, 0.06, { mode: "treasury", serviceId: "svc_mnt_stress", settlement: "fallback" }, { basket: b.name, basketId: b.id, grade: b.grade, collateralRatio, defaultProb, stress, recommendation, reportId }) });
     setReport({ basketId: b.id, collateralRatio, defaultProb, stress, recommendation, reportId });
     setRunning(false);
   };
@@ -538,8 +575,11 @@ export function RwaRegistry({ workspace }: { workspace: Workspace }) {
   return (
     <div className="panel block svc-flavor">
       <div className="block-head">
-        <div className="ttl"><span className="sq soft"><FileText width={15} height={15} /></span><div><h3>RWA portfolio</h3><div className="sub">tokenised real-world assets on Mantle · allocation by weight, credit quality at a glance · pull a risk report on any basket</div></div></div>
+        <div className="ttl"><span className="sq soft"><FileText width={15} height={15} /></span><div><h3>RWA portfolio</h3><div className="sub">tokenised real-world assets on Mantle · allocation by weight, credit quality at a glance · risk reports run on the Agent Treasury</div></div></div>
       </div>
+      {reportErr && (
+        <div style={{ margin: "0 16px 12px", padding: "7px 12px", borderRadius: 9, background: "color-mix(in srgb, var(--red) 12%, transparent)", color: "var(--red)", fontSize: ".74rem", fontWeight: 600 }}>{reportErr}</div>
+      )}
 
       {/* Donut + ladder side by side */}
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", padding: "0 16px 14px", alignItems: "flex-start" }}>
@@ -649,13 +689,19 @@ export function MantleEconomyLoop({ workspace }: { workspace: Workspace }) {
   // simulated agent wallet balances
   const mnt = Number((4.2 + deterministicScore(workspace.id + "|mnt", 0, 6)).toFixed(3));
 
-  const deploy = () => {
+  const deploy = async () => {
     const fr = Math.min(1, Math.max(0.05, parseFloat(fraction) || 0.5));
     const amt = Number((surplus * fr).toFixed(4));
     if (amt <= 0) return;
+    // Manual yield allocation (capital movement) — needs a per-call wallet signature, never the Agent Treasury.
+    try {
+      await requestWalletPerCallSignature(MNT_FUNDING_SCOPE, amt, "svc_mnt_meth");
+    } catch {
+      return;
+    }
     const methGot = amt / liveEthPrice;
     setEco((e) => ({ deployedUsd: Number((e.deployedUsd + amt).toFixed(4)), methAcquired: Number((e.methAcquired + methGot).toFixed(8)), deploys: e.deploys + 1 }));
-    emitReceipt({ workspaceId: workspace.id, serviceName: "Agent Economy · Deploy surplus → mETH", amount: amt, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.deploy", payload: { deployedUsd: amt, methAcquired: methGot, fraction: fr, txHash: "0x" + hashId("tx", "deploy" + Date.now(), 12) } });
+    emitReceipt({ workspaceId: workspace.id, serviceName: "Agent Economy · Deploy surplus → mETH", amount: amt, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.deploy", payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, amt, { mode: "wallet_per_call", serviceId: "svc_mnt_meth", settlement: "live" }, { deployedUsd: amt, methAcquired: methGot, fraction: fr, txHash: "0x" + hashId("tx", "deploy" + Date.now(), 12) }) });
   };
 
   const Node = ({ n, title, value, sub, active }: { n: string; title: string; value: string; sub: string; active?: boolean }) => (
@@ -727,8 +773,15 @@ export function YieldBoard({ workspace }: { workspace: Workspace }) {
 
   const approveRotation = async () => {
     setRotating(true);
+    // Manual yield rotation — needs a per-call wallet signature, never the Agent Treasury.
+    try {
+      await requestWalletPerCallSignature(MNT_FUNDING_SCOPE, 0.03, "svc_mnt_meth");
+    } catch {
+      setRotating(false);
+      return;
+    }
     await new Promise((r) => setTimeout(r, 500));
-    const rid = emitReceipt({ workspaceId: workspace.id, serviceId: "svc_mnt_yield", serviceName: "mETH/USDY Yield API", amount: 0.03, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.yield.rotate", payload: { from: loser, to: winner, movePct, methApy: meth.apy, usdyApy: usdy.apy } });
+    const rid = emitReceipt({ workspaceId: workspace.id, serviceId: "svc_mnt_meth", serviceName: "mETH/USDY Yield Rotation", amount: 0.03, currency: "USDC", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.yield.rotate", payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, 0.03, { mode: "wallet_per_call", serviceId: "svc_mnt_meth", settlement: "live" }, { from: loser, to: winner, movePct, methApy: meth.apy, usdyApy: usdy.apy }) });
     setRotated(rid.id);
     setRotating(false);
   };
@@ -880,15 +933,18 @@ export function MantleDevToolsPanel({ workspace }: { workspace: Workspace }) {
   ${_apiBase}${endpoint.path}`;
   const register = async () => {
     setBusy(true);
+    // Manual API registration (listing action) — needs a per-call wallet signature, never the Agent Treasury.
+    try { await requestWalletPerCallSignature(MNT_FUNDING_SCOPE, 0.05, "svc_mnt_backtest"); } catch { setBusy(false); return; }
     await new Promise((r) => setTimeout(r, 500));
     const api: RegisteredApi = { id: "api_" + hashId("mnt", selected + Date.now(), 8), endpointId: selected, name: endpoint.name, path: endpoint.path, registeredAt: new Date().toISOString(), calls: 0 };
     setRegistered((prev) => [api, ...prev]);
-    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_mantle_alpha", serviceName: `DevTools · Register ${endpoint.name}`, amount: 0.05, currency: "MNT", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.devtools.register", payload: { endpointId: selected, name: endpoint.name, path: endpoint.path, price: endpoint.price } });
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_mnt_backtest", serviceName: `DevTools · Register ${endpoint.name}`, amount: 0.05, currency: "MNT", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.devtools.register", payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, 0.05, { mode: "wallet_per_call", serviceId: "svc_mnt_backtest", settlement: "live" }, { endpointId: selected, name: endpoint.name, path: endpoint.path, price: endpoint.price }) });
     setBusy(false);
   };
   const simulate = (api: RegisteredApi) => {
     setRegistered((prev) => prev.map((a) => a.id === api.id ? { ...a, calls: a.calls + 1 } : a));
-    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_mantle_alpha", serviceName: `DevTools · Simulate call ${api.name}`, amount: 0.01, currency: "MNT", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.devtools.simulate", payload: { apiId: api.id, name: api.name } });
+    // Simulated call — fallback receipt (amount 0), no live settlement, no treasury spend.
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_mnt_backtest", serviceName: `DevTools · Simulate call ${api.name} (local)`, amount: 0, currency: "MNT", network: workspace.networks[0] ?? "mantle-sepolia", kind: "mantle.devtools.simulate", status: "pending", payload: fundingReceiptPayload(MNT_FUNDING_SCOPE, 0.01, { mode: "wallet_per_call", serviceId: "svc_mnt_backtest", settlement: "fallback" }, { apiId: api.id, name: api.name }) });
   };
   return (
     <div className="panel block svc-flavor">

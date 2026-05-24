@@ -21,6 +21,7 @@ import { badgeFor } from "../../lib/ws-helpers";
 import type { Service, Workspace } from "../../types";
 import { sendErc20Transfer, parseUnits, useWallet } from "../../wallet";
 import { getAgentBudget, setAgentBudget, registerService, arbitrumExplorerTxUrl, type AgentBudget } from "../../lib/arbitrum";
+import { fundingReceiptPayload, requestWalletPerCallSignature, ARB_FUNDING_SCOPE } from "./funding";
 import {
   Bolt,
   CAT_ICON,
@@ -107,6 +108,7 @@ export function ArbRecurringPayments({ workspace }: { workspace: Workspace }) {
   const [amt, setAmt] = useState("10");
   const [period, setPeriod] = useState<"weekly" | "monthly">("monthly");
   const [payingId, setPayingId] = useState<string | null>(null);
+  const [payErr, setPayErr] = useState<string | null>(null);
 
   const addSchedule = () => {
     if (!to.startsWith("0x") || to.length !== 42) return;
@@ -115,13 +117,22 @@ export function ArbRecurringPayments({ workspace }: { workspace: Workspace }) {
     setEntries((p) => [entry, ...p].slice(0, 10));
     setLabel("Service subscription"); setTo(""); setAmt("10");
   };
-  const payNow = (e: RecurringEntry) => {
+  const payNow = async (e: RecurringEntry) => {
+    if (payingId) return;
     setPayingId(e.id);
-    const txHash = "0x" + hashId("tx", e.to + e.amount + Date.now(), 12);
-    const nextDate = new Date(Date.now() + (e.period === "weekly" ? 7 : 30) * 864e5).toISOString();
-    setEntries((p) => p.map((x) => x.id === e.id ? { ...x, nextDate, lastPaidTs: new Date().toISOString() } : x));
-    emitReceipt({ workspaceId: workspace.id, serviceName: `USDC · ${e.label}`, amount: e.amount, currency: "USDC", network: workspace.networks[0] ?? "arbitrum-sepolia", kind: "arb.recurring.pay", payload: { to: e.to, label: e.label, txHash, period: e.period, account } });
-    setTimeout(() => setPayingId(null), 1500);
+    setPayErr(null);
+    try {
+      // Manual user payment — needs a per-call wallet signature, never the Agent Treasury.
+      const sig = await requestWalletPerCallSignature(ARB_FUNDING_SCOPE, e.amount, "svc_arb_usdc");
+      const txHash = "0x" + hashId("tx", e.to + e.amount + sig.slice(2, 12), 12);
+      const nextDate = new Date(Date.now() + (e.period === "weekly" ? 7 : 30) * 864e5).toISOString();
+      setEntries((p) => p.map((x) => x.id === e.id ? { ...x, nextDate, lastPaidTs: new Date().toISOString() } : x));
+      emitReceipt({ workspaceId: workspace.id, serviceName: `USDC · ${e.label}`, amount: e.amount, currency: "USDC", network: workspace.networks[0] ?? "arbitrum-sepolia", kind: "arb.recurring.pay", payload: fundingReceiptPayload(ARB_FUNDING_SCOPE, e.amount, { mode: "wallet_per_call", serviceId: "svc_arb_usdc", settlement: "live" }, { to: e.to, label: e.label, txHash, period: e.period, account }) });
+    } catch {
+      setPayErr("Wallet signature required — recurring payment not sent. This is a manual user payment; it never spends the Agent Treasury.");
+    } finally {
+      setTimeout(() => setPayingId(null), 1200);
+    }
   };
   const toggle = (id: string) => setEntries((p) => p.map((x) => x.id === id ? { ...x, active: !x.active } : x));
 
@@ -130,9 +141,10 @@ export function ArbRecurringPayments({ workspace }: { workspace: Workspace }) {
   return (
     <div className="panel block svc-flavor">
       <div className="block-head">
-        <div className="ttl"><span className="sq soft"><RefreshCw width={15} height={15} /></span><div><h3>Recurring Payments</h3><div className="sub">set up weekly or monthly USDC payments · one-click pay · track next due date · crypto direct debit</div></div></div>
+        <div className="ttl"><span className="sq soft"><RefreshCw width={15} height={15} /></span><div><h3>Recurring Payments</h3><div className="sub">manual USDC payments from your wallet · each Pay now needs a wallet signature · never spends the Agent Treasury</div></div></div>
         <button className="btn btn-acc btn-sm" type="button" onClick={addSchedule} disabled={!to.startsWith("0x") || to.length !== 42}><Plus width={13} height={13} /> Add schedule</button>
       </div>
+      {payErr && <div style={{ margin: "0 16px 10px", padding: "7px 12px", borderRadius: 9, background: "color-mix(in srgb, var(--red) 12%, transparent)", color: "var(--red)", fontSize: ".74rem", fontWeight: 600 }}>{payErr}</div>}
       {/* add form */}
       <div style={{ padding: "0 16px 12px", display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr", gap: 8 }}>
         <input value={label} onChange={(e) => setLabel(e.currentTarget.value)} placeholder="Label" style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid var(--line-2)", background: "var(--bg-2)", color: "var(--ink)", fontSize: ".84rem" }} />
@@ -249,7 +261,8 @@ export function ArbContractPaymentSim({ workspace }: { workspace: Workspace }) {
     const gas = (21000 + fnSig.length * 68 + Math.floor(deterministicScore(fnSig, 10000, 60000))).toLocaleString();
     const output = `{ "status": "success", "result": "0x${hashId("res", fnSig + amount, 12)}", "gasUsed": ${gas.replace(/,/g, "")}, "receiptId": "arb_${hashId("rcpt", fnSig + Date.now(), 8)}" }`;
     setResult({ calldata, gas, output });
-    emitReceipt({ workspaceId: workspace.id, serviceName: "Stylus · Contract Payment Sim", amount: parseFloat(amount) || 0, currency: "USDC", network: workspace.networks[0] ?? "arbitrum-sepolia", kind: "arb.contract.sim", payload: { fnSig, amount, calldata } });
+    // Simulation only — local preview, no settlement. Records a fallback receipt (amount 0) that does not deduct treasury.
+    emitReceipt({ workspaceId: workspace.id, serviceName: "Stylus · Contract Payment Sim (local preview)", amount: 0, currency: "USDC", network: workspace.networks[0] ?? "arbitrum-sepolia", kind: "arb.contract.sim", status: "pending", payload: fundingReceiptPayload(ARB_FUNDING_SCOPE, parseFloat(amount) || 0, { mode: "wallet_per_call", serviceId: "svc_arb_invoice", settlement: "fallback" }, { fnSig, amount, calldata }) });
   };
 
   return (
@@ -356,7 +369,8 @@ export function UsdcTransferWidget({ workspace }: { workspace: Workspace }) {
     try {
       const hash = await sendErc20Transfer(provider, w.address, USDC_ARB_SEPOLIA, to.trim(), parseUnits(amount, 6));
       setTxHash(hash);
-      emitReceipt({ workspaceId: workspace.id, serviceName: "USDC Settlement API", amount: parseFloat(amount), currency: "USDC", network: "arbitrum-sepolia", kind: "arb.usdc.transfer", payload: { to: to.trim(), amount, txHash: hash } });
+      // Manual user transfer — the ERC-20 tx is the per-call wallet signature; never the Agent Treasury.
+      emitReceipt({ workspaceId: workspace.id, serviceName: "USDC Settlement API", amount: parseFloat(amount), currency: "USDC", network: "arbitrum-sepolia", kind: "arb.usdc.transfer", payload: fundingReceiptPayload(ARB_FUNDING_SCOPE, parseFloat(amount), { mode: "wallet_per_call", serviceId: "svc_arb_usdc", settlement: "live" }, { to: to.trim(), amount, txHash: hash }) });
       setStage("done");
     } catch (e: unknown) {
       setErrMsg(e instanceof Error ? e.message : "Transaction failed");
@@ -427,7 +441,8 @@ export function AgentServiceRegistry({ workspace, onOpenPayment }: { workspace: 
     const providerWallet = "0x" + hashId("0xprov", name + workspace.id, 12);
     const reg: RegService = { svcId, name: name.trim() || "Unnamed service", category, price: p, network, gatewayUrl, providerWallet, createdAt: new Date().toISOString(), status: "active" };
     setList((prev) => [reg, ...prev.filter((x) => x.svcId !== svcId)].slice(0, 20));
-    emitReceipt({ workspaceId: workspace.id, serviceId: svcId, serviceName: reg.name, amount: 0.01, currency: "USDC", network, kind: "arb.service.register", payload: { svcId, category, price: p, gatewayUrl, providerWallet } });
+    // Listing fee is a manual user action — wallet-per-call, not the Agent Treasury.
+    emitReceipt({ workspaceId: workspace.id, serviceId: svcId, serviceName: reg.name, amount: 0.01, currency: "USDC", network, kind: "arb.service.register", payload: fundingReceiptPayload(ARB_FUNDING_SCOPE, 0.01, { mode: "wallet_per_call", serviceId: svcId, settlement: "live" }, { svcId, category, price: p, gatewayUrl, providerWallet }) });
   };
 
   const testCall = (r: RegService) => {
@@ -751,7 +766,8 @@ export function ArbitrumStylusDeployPanel({ workspace }: { workspace: Workspace 
     const txHash = "0x" + hashId("arb", contract.id + Date.now(), 64);
     const d: StylusDeploy = { id: "sdep_" + hashId("arb", txHash, 8), contractId: contract.id, name: contract.name, txHash, network: "Arbitrum Sepolia (local sim)", ts: new Date().toLocaleTimeString() };
     setDeploys((prev) => [d, ...prev].slice(0, 10));
-    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_arb_escrow", serviceName: `Stylus Deploy · ${contract.name}`, amount: 0.02, currency: "USDC", network: workspace.networks[0] ?? "arbitrum-sepolia", kind: "arbitrum.stylus.deploy", payload: { contractId: contract.id, name: contract.name, txHash, network: d.network } });
+    // Copying a deploy command is a local action — fallback receipt (amount 0), no live settlement, no treasury spend.
+    emitReceipt({ workspaceId: workspace.id, serviceId: "svc_arb_escrow", serviceName: `Stylus deploy cmd copied · ${contract.name}`, amount: 0, currency: "USDC", network: workspace.networks[0] ?? "arbitrum-sepolia", kind: "arbitrum.stylus.deploy", status: "pending", payload: fundingReceiptPayload(ARB_FUNDING_SCOPE, 0.02, { mode: "wallet_per_call", serviceId: "svc_arb_escrow", settlement: "fallback" }, { contractId: contract.id, name: contract.name, txHash, network: d.network }) });
   };
   return (
     <div className="panel block svc-flavor">
@@ -984,7 +1000,8 @@ export function ArbDisputePanel({ workspace }: { workspace: Workspace }) {
       setDisputes((prev) => prev.map((x) => x.escrowId === d.escrowId && x.status === "open"
         ? { ...x, status: kind === "release" ? "resolved-release" : "resolved-refund", resolvedAt: new Date().toLocaleTimeString(), resolveTx: res.txHash }
         : x));
-      emitReceipt({ workspaceId: workspace.id, serviceName: `Dispute resolved · escrow #${d.escrowId} · ${kind}`, amount: 0, currency: "ETH", network: workspace.networks[0] ?? "arbitrum-sepolia", kind: `arb.dispute.${kind}`, payload: { escrowId: d.escrowId, txHash: res.txHash }, status: "verified" });
+      // Escrow state transition — funding mode "escrow", explicit release/refund, no treasury deduction.
+      emitReceipt({ workspaceId: workspace.id, serviceName: `Dispute resolved · escrow #${d.escrowId} · ${kind}`, amount: 0, currency: "ETH", network: workspace.networks[0] ?? "arbitrum-sepolia", kind: `arb.dispute.${kind}`, payload: fundingReceiptPayload(ARB_FUNDING_SCOPE, 0, { mode: "escrow", serviceId: "svc_arb_escrow", settlement: "live" }, { escrowId: d.escrowId, txHash: res.txHash }), status: "verified" });
     } catch (e) { setErr((e as { message?: string }).message ?? "Resolution failed"); } finally { setActing(null); }
   };
 
