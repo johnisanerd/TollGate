@@ -14,6 +14,7 @@ import { buildArcSignalSourceRadar } from "./arc-signal-sources.js";
 import { fetchEthMarketPrice } from "./market-data.js";
 import { appendReceipt } from "./store.js";
 import { dispatchAlert } from "./alerts.js";
+import { postCast, isFarcasterConfigured } from "./farcaster.js";
 
 const ARC_RPC = process.env.ARC_RPC_URL ?? "https://rpc.testnet.arc-node.thecanteenapp.com/v1/public";
 const ARC_KEY = process.env.ARC_PRIVATE_KEY ?? "";
@@ -382,6 +383,9 @@ export async function arcAgentLoop(): Promise<void> {
       message: "Paper decision recorded; ARC_PRIVATE_KEY or ARC_AGENT_ID is not set.",
     };
     await sendDecisionAlert({ action: copyGuard.signalGuard?.action ?? copyGuard.primaryAction, risk: copyGuard.signalGuard?.riskScore, decisionHash, txHash: null, leaderSource: leaderFeed.source });
+    if (isFarcasterConfigured() && decision !== "HOLD") {
+      postCast(`ArcMind decision: ${decision} ETH @ $${ethPrice.toLocaleString()} | OI ${hlOI?.oiValue ?? "n/a"} | paper mode\n${decisionHash.slice(0, 20)}...`, { channelId: "arcmind" }).catch(() => {});
+    }
     console.log(`${tag} Paper decision recorded locally; set ARC_PRIVATE_KEY + ARC_AGENT_ID for Arc registry writes`);
     return;
   }
@@ -407,6 +411,9 @@ export async function arcAgentLoop(): Promise<void> {
       message: "Decision recorded on Arc and appended to the local decision log.",
     };
     await sendDecisionAlert({ action: copyGuard.signalGuard?.action ?? copyGuard.primaryAction, risk: copyGuard.signalGuard?.riskScore, decisionHash, txHash, leaderSource: leaderFeed.source });
+    if (isFarcasterConfigured() && decision !== "HOLD") {
+      postCast(`ArcMind decision: ${decision} ETH @ $${ethPrice.toLocaleString()} | OI ${hlOI?.oiValue ?? "n/a"}\nhttps://testnet.arcscan.app/tx/${txHash}`, { channelId: "arcmind" }).catch(() => {});
+    }
 
     if (decision !== "HOLD") {
       const side = decision === "BUY" ? "BUY" : "SELL";
