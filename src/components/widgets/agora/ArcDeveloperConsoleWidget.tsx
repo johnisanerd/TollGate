@@ -20,6 +20,7 @@ import {
 } from "./AgoraExtraWidgets";
 import { ArcMindDebateWidget } from "./ArcMindWidgets";
 import { ArcSlashLeaderboardWidget } from "./ArcSlashLeaderboardWidget";
+import { ArcGalxeQuestWidget } from "./ArcGalxeQuestWidget";
 
 interface SectionProps {
   title: string;
@@ -98,6 +99,9 @@ export function ArcDeveloperConsoleWidget({ workspace }: Props) {
       </Section>
       <Section title="Slash-Bonded Leaderboard" description="ERC-8004 agent registry — bond at risk, reputation scores, slashed agents with reasons.">
         <ArcSlashLeaderboardWidget workspace={workspace} />
+      </Section>
+      <Section title="Galxe Pioneer Quest" description="Stake $1 on Arc Testnet → collect a receipt → claim your soulbound ArcMind Pioneer NFT badge.">
+        <ArcGalxeQuestWidget />
       </Section>
       <Section title="Decision Room" description="Current BUY/SELL/HOLD reasoning, gate status, approve/reject controls.">
         <ArcControlDecisionRoomWidget workspace={workspace} />
