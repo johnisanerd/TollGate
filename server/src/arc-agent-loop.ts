@@ -13,6 +13,7 @@ import { buildCopyGuardDecision, type CopyGuardLeader, type CopyGuardSignals } f
 import { buildArcSignalSourceRadar } from "./arc-signal-sources.js";
 import { fetchEthMarketPrice } from "./market-data.js";
 import { appendReceipt } from "./store.js";
+import { dispatchAlert } from "./alerts.js";
 
 const ARC_RPC = process.env.ARC_RPC_URL ?? "https://rpc.testnet.arc-node.thecanteenapp.com/v1/public";
 const ARC_KEY = process.env.ARC_PRIVATE_KEY ?? "";
@@ -31,7 +32,6 @@ export const ARC_AGENT_INTERVAL_MS = Number(process.env.ARC_AGENT_INTERVAL_MS ??
 let prevEthPrice: number | null = null;
 let arcWallet: ethers.Wallet | null = null;
 let schedulerStop: (() => void) | null = null;
-let lastTelegramKey: string | null = null;
 
 export type ArcAgentLoopStatus = {
   state: "idle" | "running" | "skipped" | "recorded" | "failed";
@@ -268,31 +268,21 @@ async function pinTraceJson(payload: unknown, decisionHash: string): Promise<{ p
   }
 }
 
-async function sendTelegramAlert(input: { action: string; risk?: number; decisionHash: string; txHash?: string | null; leaderSource: LeaderSource }): Promise<void> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return;
-  const key = `${input.action}:${input.decisionHash}`;
-  if (lastTelegramKey === key) return;
+async function sendDecisionAlert(input: { action: string; risk?: number; decisionHash: string; txHash?: string | null; leaderSource: LeaderSource }): Promise<void> {
   if (input.action === "ALLOW_COPY" || input.action === "HOLD_USDC") return;
-  lastTelegramKey = key;
-  const text = [
-    `ArcMind alert: ${input.action}`,
+  const body = [
     input.risk != null ? `Risk score: ${input.risk}/100` : null,
     `Leader feed: ${input.leaderSource.status}`,
     `Decision: ${input.decisionHash.slice(0, 18)}...`,
     input.txHash ? `Arc tx: https://testnet.arcscan.app/tx/${input.txHash}` : "Arc tx: pending/paper",
   ].filter(Boolean).join("\n");
-  try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
-      signal: AbortSignal.timeout(8_000),
-    });
-  } catch {
-    // Alert delivery is best-effort and must not block decision recording.
-  }
+  await dispatchAlert({
+    title: `ArcMind decision: ${input.action}`,
+    body,
+    level: input.action === "ARC_RECORD_FAILED" ? "alert" : input.action.startsWith("STOP") ? "warn" : "info",
+    href: input.txHash ? `https://testnet.arcscan.app/tx/${input.txHash}` : undefined,
+    dedupeKey: `${input.action}:${input.decisionHash}`,
+  }).catch(() => { /* best-effort */ });
 }
 
 function getArcWallet(): ethers.Wallet | null {
@@ -391,7 +381,7 @@ export async function arcAgentLoop(): Promise<void> {
       txHash: null,
       message: "Paper decision recorded; ARC_PRIVATE_KEY or ARC_AGENT_ID is not set.",
     };
-    await sendTelegramAlert({ action: copyGuard.signalGuard?.action ?? copyGuard.primaryAction, risk: copyGuard.signalGuard?.riskScore, decisionHash, txHash: null, leaderSource: leaderFeed.source });
+    await sendDecisionAlert({ action: copyGuard.signalGuard?.action ?? copyGuard.primaryAction, risk: copyGuard.signalGuard?.riskScore, decisionHash, txHash: null, leaderSource: leaderFeed.source });
     console.log(`${tag} Paper decision recorded locally; set ARC_PRIVATE_KEY + ARC_AGENT_ID for Arc registry writes`);
     return;
   }
@@ -416,7 +406,7 @@ export async function arcAgentLoop(): Promise<void> {
       txHash,
       message: "Decision recorded on Arc and appended to the local decision log.",
     };
-    await sendTelegramAlert({ action: copyGuard.signalGuard?.action ?? copyGuard.primaryAction, risk: copyGuard.signalGuard?.riskScore, decisionHash, txHash, leaderSource: leaderFeed.source });
+    await sendDecisionAlert({ action: copyGuard.signalGuard?.action ?? copyGuard.primaryAction, risk: copyGuard.signalGuard?.riskScore, decisionHash, txHash, leaderSource: leaderFeed.source });
 
     if (decision !== "HOLD") {
       const side = decision === "BUY" ? "BUY" : "SELL";
@@ -451,7 +441,7 @@ export async function arcAgentLoop(): Promise<void> {
       txHash: null,
       message: `recordDecision failed; paper decision was appended: ${(err as Error).message ?? "unknown error"}`,
     };
-    await sendTelegramAlert({ action: "ARC_RECORD_FAILED", risk: copyGuard.signalGuard?.riskScore, decisionHash, txHash: null, leaderSource: leaderFeed.source });
+    await sendDecisionAlert({ action: "ARC_RECORD_FAILED", risk: copyGuard.signalGuard?.riskScore, decisionHash, txHash: null, leaderSource: leaderFeed.source });
   }
 }
 
