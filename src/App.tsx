@@ -136,7 +136,9 @@ export default function App() {
       amount: input.amount,
       currency: input.currency ?? "USDC",
       network: input.network,
-      txHash: makeTxHash(),
+      txHash: (input.payload as { settlement?: string } | undefined)?.settlement === "fallback"
+        ? undefined
+        : makeTxHash(),
       status: input.status ?? "verified",
       createdAt: new Date().toISOString(),
       kind: input.kind,
