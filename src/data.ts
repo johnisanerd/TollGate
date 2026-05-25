@@ -29,7 +29,7 @@ export { SEEDED_PINS };
 
 // ── Workspaces ──────────────────────────────────────────────────────────────
 
-export const workspaces = [og, mantle, arbitrum, sui, qie, agora, polygon];
+export const workspaces = [og, qie, agora];
 
 export const wsBySlug = (slug: string) => workspaces.find((w) => w.route === `/${slug}`);
 
