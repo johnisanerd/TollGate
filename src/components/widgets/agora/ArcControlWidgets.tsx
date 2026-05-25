@@ -130,6 +130,19 @@ function copyText(value: unknown): void {
   void navigator.clipboard?.writeText(text);
 }
 
+function CopyFeedbackButton({ text, label, icon }: { text: string; label: string; icon: React.ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <ActionButton tone="soft" onClick={() => {
+      void navigator.clipboard?.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }}>
+      {icon} {copied ? "Copied!" : label}
+    </ActionButton>
+  );
+}
+
 function useWalletStatus() {
   const [wallet, setWallet] = useState<{ connected: boolean; address?: string; chainId?: string; arcReady: boolean }>({
     connected: false,
@@ -1403,8 +1416,8 @@ export function ArcControlReceiptsWidget({ workspace }: { workspace: Workspace }
               <StatusPill value={receipt.liveStatus} />
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-              <ActionButton tone="soft" onClick={() => copyText(receipt.id)}><Copy size={14} /> Copy ID</ActionButton>
-              <ActionButton tone="soft" onClick={() => copyText(JSON.stringify(receipt, null, 2))}><FileText size={14} /> Request Review</ActionButton>
+              <CopyFeedbackButton text={receipt.id} label="Copy ID" icon={<Copy size={14} />} />
+              <CopyFeedbackButton text={JSON.stringify(receipt, null, 2)} label="Request Review" icon={<FileText size={14} />} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8, marginTop: 10, color: "#9fb0c8", fontSize: 11 }}>
               <span>Workspace: agora</span>
@@ -1434,8 +1447,8 @@ export function ArcControlReceiptsWidget({ workspace }: { workspace: Workspace }
                 : "no verified Arc tx"}</span>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-              <ActionButton tone="soft" onClick={() => copyText(receipt.id)}><Copy size={14} /> Copy ID</ActionButton>
-              <ActionButton tone="soft" onClick={() => copyText(JSON.stringify(receipt, null, 2))}><FileText size={14} /> Request Review</ActionButton>
+              <CopyFeedbackButton text={receipt.id} label="Copy ID" icon={<Copy size={14} />} />
+              <CopyFeedbackButton text={JSON.stringify(receipt, null, 2)} label="Request Review" icon={<FileText size={14} />} />
             </div>
             <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 6 }}>{money(receipt.amount)} · {String(receipt.payload?.["fundingMode"] ?? "legacy receipt")} · {new Date(receipt.createdAt).toLocaleString()}</div>
           </div>
