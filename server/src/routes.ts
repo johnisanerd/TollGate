@@ -1465,6 +1465,23 @@ apiRouter.get("/leaderboard", (_req: Request, res: Response) => {
   res.json({ leaderboard: rows, ts: new Date().toISOString() });
 });
 
+// ─── Arc RPC proxy (avoids CORS when frontend is on Vercel) ──────────────────
+const ARC_RPC_UPSTREAM = "https://rpc.testnet.arc-node.thecanteenapp.com/v1/public";
+apiRouter.post("/arc-rpc", async (req: Request, res: Response) => {
+  try {
+    const upstream = await fetch(ARC_RPC_UPSTREAM, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const data = await upstream.json() as unknown;
+    res.status(upstream.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: "arc-rpc proxy error", detail: String(err) });
+  }
+});
+
 export const statusRouter = Router();
 
 statusRouter.get("/health", (_req: Request, res: Response) => {

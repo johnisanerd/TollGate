@@ -30,9 +30,16 @@ export function isPredictionOracleConfigured(): boolean {
   return getOracleAddress() !== null;
 }
 
+function getArcRpc(): string {
+  const explicit = env("VITE_ARC_RPC_URL");
+  if (explicit) return explicit;
+  const serverUrl = env("VITE_SERVER_URL");
+  if (serverUrl) return `${serverUrl}/api/arc-rpc`;
+  return ARC_RPC_FALLBACK;
+}
+
 function getProvider(): JsonRpcProvider {
-  const rpc = env("VITE_ARC_RPC_URL") ?? ARC_RPC_FALLBACK;
-  return new JsonRpcProvider(rpc);
+  return new JsonRpcProvider(getArcRpc());
 }
 
 export interface NativePrediction {

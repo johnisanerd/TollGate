@@ -237,7 +237,15 @@ export interface JobLifecycleEntry {
 }
 
 const ARC_RPC_FALLBACK = "https://rpc.testnet.arc-node.thecanteenapp.com/v1/public";
-const ESCROW_DEPLOY_BLOCK_FALLBACK = 0; // safe default; backend can override later
+const ESCROW_DEPLOY_BLOCK_FALLBACK = 0;
+
+function getArcRpc(): string {
+  const explicit = env("VITE_ARC_RPC_URL");
+  if (explicit) return explicit;
+  const serverUrl = env("VITE_SERVER_URL");
+  if (serverUrl) return `${serverUrl}/api/arc-rpc`;
+  return ARC_RPC_FALLBACK;
+} // safe default; backend can override later
 
 interface RawLog {
   fragment?: { name?: string };
@@ -261,8 +269,7 @@ export async function fetchEscrowJobLifecycle(userAddress: string): Promise<JobL
   if (!/^0x[a-fA-F0-9]{40}$/.test(userAddress)) return [];
 
   try {
-    const rpcUrl = env("VITE_ARC_RPC_URL") ?? ARC_RPC_FALLBACK;
-    const provider = new JsonRpcProvider(rpcUrl);
+    const provider = new JsonRpcProvider(getArcRpc());
     const escrow = new Contract(cfg.escrowAddress, ESCROW_ABI, provider);
 
     const userLower = userAddress.toLowerCase();
@@ -356,7 +363,7 @@ export async function getArcAgentStats(agentId: string): Promise<{ reputation: n
   if (!cfg.registryAddress || !agentId) return null;
   try {
     const iface = new Interface(REGISTRY_ABI);
-    const provider = new JsonRpcProvider("https://rpc.testnet.arc-node.thecanteenapp.com/v1/public");
+    const provider = new JsonRpcProvider(getArcRpc());
     const registry = new Contract(cfg.registryAddress, iface, provider);
     const rep = await registry.getReputation(agentId) as bigint;
     return { reputation: Number(rep) };
